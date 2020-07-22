@@ -1,0 +1,9 @@
+{
+	"authors": [
+		"marx-saul"
+	],
+	"copyright": "Copyright © 2020, marx-saul",
+	"description": "A minimal language.",
+	"license": "Boost",
+	"name": "oak"
+}
