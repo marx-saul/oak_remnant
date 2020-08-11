@@ -1,22 +1,15 @@
+/**
+ * parser.d
+ * Defines the parser class, converting the source file to ASTBase.
+ */
 module parser;
 
-import lexer;
+import token, lexer;
 import astbase;
 import parse_time_visitor;
 import message;
 import std.algorithm;
 import std.conv: to;
-
-unittest {
-	import std.stdio;
-	writeln("##### parser unittest #####");
-	auto parser = new Parser!string(`
-	_.a = b = 1 => 2.3 => "strs" app (12, 24) app (42) (f, g)
-	//a app b app f g
-	`);
-	auto node = parser.parseExpression();
-	node.to_string().writeln;
-}
 
 final class Parser(Range) : Lexer!Range {
 	/// Create parser.
@@ -25,7 +18,7 @@ final class Parser(Range) : Lexer!Range {
 	}
 
 	/// Check if the current token is the designated one, and throw it away.
-	/// If not, throw away all the token until it reaches it or EOF.
+	/// If not, throw away all the token until it reaches the expected token or EOF.
 	private void check(TokenKind kind) {
 		auto loc = token.loc;
 		if (token.kind == kind) {
@@ -41,97 +34,89 @@ final class Parser(Range) : Lexer!Range {
 		error(loc, token_dictionary[kind], " was expected, not ", token_dictionary[err_kind]);
 	}
 	
+	private bool _is_error;
+	/// Whether there was a syntax error
+	public  bool is_error() @property {
+		return _is_error;
+	}
+	private static immutable error_max = 10;
 	private void error(Location loc, string[] msgs...) {
 		message.error(loc, msgs);
+		_is_error = true;
 	}
-	
-	/+
-	private size_t[] lookahead_nums;
-	private string[] error_msgs;
-	/**
-	 * For resoliving grmmars's ambiguity.
-	 * When this function is called, every parse*** functions begin to parse without eating any tokens.
-	 * Error messages are stored in error_msgs.
-	 */
-	private void expect() {
-		lookahead_nums ~= 0;
-	}
-	/**
-	 * Stop expecting.
-	 * Returns: the number of tokens parser consumped.
-	 */
-	private size_t decide() {
-		auto result = lookahead_nums[0];
-		lookahead_nums.length -= 1;
-		return result;
-	}
-	/**
-	 * Get rid of one token.
-	 */
-	override private void nextToken() {
-		if (lookahead_nums.length > 0) {
-			++lookahead_nums[$-1];
-		}
-		else {
-			super.nextToken();
-		}
-	}
-	/**
-	 * Get the current token.
-	 */
-	override private Token token() @property inout {
-		if (lookahead_nums.length > 0) {
-			return super.lookahead(lookahead_nums[$-1]);
-		}
-		else {
-			return super.token;
-		}
-	}
-	/**
-	 * Get the k-th next token.
-	 */
-	override private Token lookahead(size_t k = 1) {
-		if (lookahead_nums.length > 0) {
-			return super.lookahead(lookahead_nums[$-1]+k);
-		}
-		else {
-			return super.lookahead(k);
-		}
-	}
-	
-	/**
-	 * Display error message. If this.expect has been called, it only push error message to this.error_msgs.
-	 */
-	private void error(Location loc, string[] msgs...) {
-		if (lookahead_nums.length > 0) {
-			import std.conv: to;
-			string result;
-			result ~= "\x1b[1m" ~ loc.path ~ "(" ~ loc.line_num.to!string ~ ":" ~ loc.index_num.to!string ~ "):\x1b[0m ";
-			result ~= "\x1b[32mError:\x1b[0m ";
-			foreach (msg; msgs) {
-				result ~= msg;
-			}
-			result ~= "\n";
-		}
-		else {
-			import std.stdio;
-			write("\x1b[1m", loc.path, "(", loc.line_num, ":", loc.index_num, "):\x1b[0m ");
-			write("\x1b[32mError:\x1b[0m ");
-			foreach (msg; msgs) {
-				write(msg);
-			}
-			writeln();
-		}
-	}
-	+/
 	
 	/* ******************************************************************************************************** */
-	protected:
-	//	Expression:
-	//		AssignExpression
-	Expression parseExpression() {
-		return parseAssignExpression();
+	/// parsing function
+	public alias parse = parseModule;
+	
+	/* ************************ Module ************************ */
+	//	Module:
+	//		ModuleDeclaration_opt ModuleBodies
+	//	ModuleDeclaration:
+	//		ModuleIdentifiers ;
+	//	ModuleIdentifiers:
+	//		identifier
+	//		identifier . ModuleIdentifiers
+	//	ModuleBodies:
+	//		ModuleBody ModuleBodies
+	//		ModuleBody
+	//	ModuleBody:
+	//		Declaration
+	Module parseModule() {
+		auto loc = token.loc;
+		string[] modname;
+		if (token.kind == TokenKind.module_) {
+			nextToken();	// get rid of module
+			if (token.kind == TokenKind.identifier) {
+				modname ~= token.str;
+				nextToken();	// get rid of identifier
+			}
+			else {
+				this.error(token.loc, "An identifier was expected after \x1b[46mmodule\x1b[0m, not, \x1b[46m", token.str, "\x1b[0m");
+			}
+			while (token.kind == TokenKind.dot) {
+				nextToken();	// get rid of .
+				if (token.kind == TokenKind.identifier) {
+					modname ~= token.str;
+					nextToken();	// get rid of identifier
+				}
+				else {
+					this.error(token.loc, "An identifier was expected after \x1b[46m.\x1b[0m, not, \x1b[46m", token.str, "\x1b[0m");
+				}
+			}
+			check(TokenKind.semicolon);
+		}
+		ASTNode[] decls;
+		while (isFirstOfDeclaration) {
+			decls ~= parseDeclaration();
+		}
+		check(TokenKind.end_of_file);
+		return new Module(loc, modname, decls);
 	}
+	
+	/* ************************ Expression ************************ */
+	//	Expression:
+	//		IfElseExpression
+	Expression parseExpression() {
+		return parseWhenElseExpression();
+	}
+	//	WhenElseExpression:
+	//		AssignExpression
+	//		when Expression : Expression else IfElseExpression
+	Expression parseWhenElseExpression() {
+		if (token.kind == TokenKind.when) {
+			auto loc = token.loc;
+			nextToken();	// get rid of if
+			auto cond = parseExpression();
+			check(TokenKind.colon);
+			auto when_exp = parseExpression();
+			check(TokenKind.else_);
+			auto else_exp = parseWhenElseExpression();
+			return new WhenElseExpression(loc, cond, when_exp, else_exp);
+		}
+		else return parseAssignExpression();
+	}
+	
 	//	AssignExpression:
 	//		PipelineExpression
 	//		PipelineExpression = AssignExpression
@@ -149,7 +134,7 @@ final class Parser(Range) : Lexer!Range {
 	}
 	//	PipelineExpression:
 	//		AppExpression
-	//		PipelineExpression |> AppExpression
+	//		PipelineExpression => AppExpression
 	Expression parsePipelineExpression() {
 		auto e0 = parseAppExpression();
 		while (token.kind == TokenKind.pipeline) {
@@ -174,21 +159,34 @@ final class Parser(Range) : Lexer!Range {
 		return e0;
 	}
 	//	OrExpression:
-	//		AndExpression
-	//		OrExpression || AndExpression
+	//		XorExpression
+	//		OrExpression || XorExpression
 	Expression parseOrExpression() {
-		auto e0 = parseAndExpression();
+		auto e0 = parseXorExpression();
 		while (token.kind == TokenKind.or) {
 			auto loc = token.loc;
 			nextToken();	// get rid of ||
-			auto e1 = parseAndExpression();
+			auto e1 = parseXorExpression();
 			e0 = new BinaryExpression(loc, TokenKind.or, e0, e1);
+		}
+		return e0;
+	}
+	//	XorExpression:
+	//		AndExpression
+	//		XorExpression ^^ AndExpression
+	Expression parseXorExpression() {
+		auto e0 = parseAndExpression();
+		while (token.kind == TokenKind.xor) {
+			auto loc = token.loc;
+			nextToken();	// get rid of ^^
+			auto e1 = parseAndExpression();
+			e0 = new BinaryExpression(loc, TokenKind.xor, e0, e1);
 		}
 		return e0;
 	}
 	//	AndExpression:
 	//		BitOrExpression
-	//		AndExpression || BitOrExpression
+	//		AndExpression && BitOrExpression
 	Expression parseAndExpression() {
 		auto e0 = parseBitOrExpression();
 		while (token.kind == TokenKind.and) {
@@ -226,7 +224,7 @@ final class Parser(Range) : Lexer!Range {
 		return e0;
 	}
 	//	BitAndExpression:
-	//		BitCmpExpression
+	//		CmpExpression
 	//		BitAndExpression & CmpExpression
 	Expression parseBitAndExpression() {
 		auto e0 = parseCmpExpression();
@@ -239,10 +237,13 @@ final class Parser(Range) : Lexer!Range {
 		return e0;
 	}
 	//	CmpExpression:
+	//		ShiftExpression
 	//		ShiftExpression  <  ShiftExpression
 	//		ShiftExpression  <= ShiftExpression
 	//		ShiftExpression  >  ShiftExpression
 	//		ShiftExpression  >= ShiftExpression
+	//		ShiftExpression  == ShiftExpression
+	//		ShiftExpression  != ShiftExpression
 	//		ShiftExpression  in ShiftExpression
 	//		ShiftExpression !in ShiftExpression
 	//		ShiftExpression  is ShiftExpression
@@ -250,7 +251,7 @@ final class Parser(Range) : Lexer!Range {
 	Expression parseCmpExpression() {
 		auto e0 = parseShiftExpression();
 		with (TokenKind)
-		if (token.kind.among!(ls, leq, gt, geq, in_, nin, is_, nis)) {
+		if (token.kind.among!(ls, leq, gt, geq, eq, neq, in_, nin, is_, nis)) {
 			auto kind = token.kind;
 			auto loc = token.loc;
 			nextToken();	// get rid of < <= > >= in !in is !is
@@ -308,8 +309,8 @@ final class Parser(Range) : Lexer!Range {
 		return e0;
 	}
 	//	PowExpression:
-	//		AppExpression
-	//		AppExpression ^^ PowExpression
+	//		ApplyExpression
+	//		ApplyExpression ** PowExpression
 	Expression parsePowExpression() {
 		auto e0 = parseApplyExpression();
 		if (token.kind == TokenKind.pow) {
@@ -413,17 +414,17 @@ final class Parser(Range) : Lexer!Range {
 				} while (!token.kind.among(identifier, new_, end_of_file));
 				// reached EOF
 				if (token.kind == end_of_file) {
-					e0.is_error = true;
 					break;
 				}
 			}
 			// DotExpression . TemplateInstance
-			if (token.kind == identifier && lookahead(1).kind == question) {
+			if (token.kind == identifier && lookahead(1).kind == temp_inst) {
 				assert(0, "TemplateInstance has not been implemented.");
 			}
 			// DotExpression . Identifier
 			else if (token.kind == identifier) {
 				auto e1 = new IdentifierExpression(loc, token.str);
+				nextToken();	// get rid of identifier
 				e0 = new BinaryExpression(loc, TokenKind.dot, e0, e1);
 			}
 			else if (token.kind == new_) {
@@ -449,12 +450,9 @@ final class Parser(Range) : Lexer!Range {
 	//		super
 	//		$
 	//		NewExpression
-	// //	LambdaExpression
+	// 		LambdaExpression
 	// //	StructLiteral
-	//		( )
-	//		( Expression )
-	//		( Expressions )
-	//		( Expressions , )
+	//		TupleExpression
 	//		ArrayLiteral
 	//		AssocArrayLiteral
 	//		BasicType . Identifier
@@ -482,16 +480,17 @@ final class Parser(Range) : Lexer!Range {
 		
 		case global:
 			nextToken();
+			is_global = true;
 			goto case;
 		case identifier:
 			// TemplateInstance
-			if (lookahead(1).kind == question) {
+			if (lookahead(1).kind == temp_inst) {
 				assert(0, "TemplateInstance has not been implemented.");
 			}
 			else {
 				auto e0 = new IdentifierExpression(token.loc, token.str);
 				nextToken();
-				e0.id.is_global = is_global;
+				e0.is_global = is_global;
 				return e0;
 			}
 			
@@ -527,7 +526,8 @@ final class Parser(Range) : Lexer!Range {
 		case new_:
 			return parseNewExpression();
 		
-		//case lambda:
+		case lambda:
+			return parseLambdaExpression();
 		//case struct_:
 			
 		case lparen:
@@ -536,11 +536,16 @@ final class Parser(Range) : Lexer!Range {
 		case lbracket:
 			assert(0, "(Assoc)ArrayExpression has not been implemented.");
 			//return parseArrayExpression();
+		
+		case ebrace:
+			assert(0, "e{ ... } has not been implemented.");
+			//return parseBlockExpression();
 			
 		case int32: case uint32: case int64: case uint64: case real32: case real64:
 		case bool_: case unit:   case string_: case char_:
 			auto loc = token.loc;
 			auto basic_type = token.kind;
+			nextToken();
 			check(dot);
 			if (token.kind == identifier) {
 				auto str = token.str;
@@ -549,11 +554,10 @@ final class Parser(Range) : Lexer!Range {
 			}
 			else {
 				this.error(loc,
-					"An identifier expected after \x1b[46m", token_dictionary[basic_type], ".\x1b[0m , not \x1b[46m",
+					"An identifier is expected after \x1b[46m", token_dictionary[basic_type], ".\x1b[0m , not \x1b[46m",
 					token.str, "\x1b[0m");
 				nextToken();
 				auto e0 = new BuiltInTypePropertyExpression(loc, basic_type, "");
-				e0.is_error = true;
 				return e0;
 			}
 			
@@ -583,32 +587,109 @@ final class Parser(Range) : Lexer!Range {
 	private pure bool isFirstOfExpression(TokenKind x) @property {
 		with (TokenKind)
 		return x.among!(
-				// literals
-				integer,		real_number,	string_literal,		identifier,
-				true_,			false_,			null_,
-				this_,			super_,			any,			dollar,
-				// 
-				if_,			// match,
-				// unary operators
-				minus,			not,			ref_of,			deref,
-				// 
-				lambda,			new_,			global,
+				integer,
+				real_number,
+				string_literal,
+				identifier,
+				true_,
+				false_,
+				null_,
+				this_,
+				super_,
+				any,
+				dollar,
+				when,
+				// match,
+				minus,
+				not,
+				ref_of,
+				deref,
+				lambda,
+				new_,
+				global,
 				// parenthesis
-				lparen, 		lbracket,		lbrace,
+				lparen,
+				lbracket,
+				//ebrace,
 				// basic types
-				int32,			uint32,			int64,			uint64,
-				real32,			real64,
-				bool_,			unit,			string_,		char_,
+				int32,
+				uint32,
+				int64,
+				uint64,
+				real32,
+				real64,
+				bool_,
+				unit,
+				string_,
+				char_,
 			) != 0;
 	}
 	private bool isFirstOfExpression() @property {
 		return isFirstOfExpression(token.kind);
 	}
+	//	NewExpression:
+	//		new Type
 	NewExpression parseNewExpression() {
 		auto loc = token.loc;
 		nextToken();	// get rid of new
 		return new NewExpression(loc, null, null);
 	}
+	//	LambdaExpresison:
+	//		\ (: Type)_opt FunctionArguments_opt = PrimaryExpression
+	//		\ (: Type)_opt FunctionArguments_opt BlockExpression
+	LambdaExpression parseLambdaExpression() {
+		auto loc = token.loc;
+		nextToken();	// get rid of \
+		
+		Type ret_type;
+		if (token.kind == TokenKind.colon) {
+			nextToken();	// get rid of :
+			ret_type = parseType();
+		}
+		
+		Location[] arglocs;
+		string[] args;
+		Type[] types;
+		with (TokenKind)
+		while (token.kind.among!(identifier, any)) {
+			auto argloc = token.loc;
+			string arg = token.str;
+			Type type;
+			nextToken();	// get rid of identifier
+			if (token.kind == colon) {
+				nextToken();	// get rid of :
+				type = parseType();
+			}
+			if (arg == "_" && !type) {
+				this.error(argloc, "A type expected after \x1b[46m_\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+			}
+			else {
+				arglocs ~= argloc;
+				args ~= arg;
+				types ~= type;
+			}
+		}
+		
+		Statement body;
+		with (TokenKind)
+		if (token.kind == lbrace) {
+			body = parseBlockStatement();
+		}
+		else if (token.kind == ass) {
+			auto assloc = token.loc;
+			nextToken();
+			auto exp = parseExpression();
+			check(semicolon);
+			body = new BlockStatement(assloc, [new ReturnStatement(assloc, exp)]);
+		}
+		
+		auto result = new LambdaExpression(loc, ret_type, arglocs, args, types, body);
+		return result;
+	}
+	//	TupleExpression:
+	//		( )
+	//		( Expressions )
+	//		( Expressions , )
 	Expression parseTupleExpression() {
 		auto loc = token.loc;
 		nextToken();	// get rid of (
@@ -634,10 +715,611 @@ final class Parser(Range) : Lexer!Range {
 		}
 	}
 	
+	/* ************************ Type ************************ */
+	//	Type:
+	//		FunctionType
 	Type parseType() {
-		nextToken();
-		return null;
+		return parseFunctionType();
+	}
+	//	FunctionType:
+	//		PointerType
+	//		PointerType -> FunctionType
+	Type parseFunctionType() {
+		auto t0 = parsePointerType();
+		if (token.kind == TokenKind.right_arrow) {
+			auto loc = token.loc;
+			nextToken();	// get rid of ->
+			auto t1 = parseFunctionType();
+			t0 = new FunctionType(loc, t0, t1);
+		}
+		return t0;
+	}
+	//	PointerType:
+	//		PrimaryType
+	//		# PointerType
+	Type parsePointerType() {
+		if (token.kind == TokenKind.ref_of) {
+			auto loc = token.loc;
+			nextToken();	// get rid of #
+			auto t1 = parsePointerType();
+			return new PointerType(loc, t1);
+		}
+		else {
+			return parsePrimaryType();
+		}
+	}
+	//	PrimaryType:
+	//		BuiltInType
+	//		ArrayType
+	//		AssocArrayType
+	//		SymbolType
+	//		TupleType
+	// //	Typeof
+	// //	Mixin
+	Type parsePrimaryType() {
+		with (TokenKind)
+		switch (token.kind) {
+		case int32: case uint32: case int64: case uint64: case real32: case real64:
+		case bool_: case unit: case string_: case char_:
+			auto t0 = new BuiltInType(token.loc, token.kind);
+			nextToken();
+			return t0;
+		case lbracket:
+			return parseArrayType();
+		case identifier:
+			return parseSymbolType();
+		case lparen:
+			return parseTupleType();
+		//case typeof_:
+		//case mixin_:
+		default:
+			this.error(token.loc, "A type is expected, not \x1b[46m", token.str, "\x1b[0m.");
+			nextToken();
+			return null;
+		}
 	}
 	
+	//	ArrayType:
+	//		[ Type ]
+	//	AssocArrayType:
+	//		[ Type : Type ]
+	Type parseArrayType() {
+		auto loc = token.loc;
+		nextToken();	// get rid of [
+		auto t1 = parseType();
+		if (token.kind == TokenKind.colon) {
+			nextToken();	// get rid of :
+			auto t2 = parseType();
+			check(TokenKind.rbracket);
+			return new AssocArrayType(loc, t1, t2);
+		}
+		else {
+			check(TokenKind.rbracket);
+			return new ArrayType(loc, t1);
+		}
+	}
+	
+	//	SymbolType:
+	//		identifier
+	//		_. identifier
+	//		TemplateInstance
+	//		_. TemplateInstance
+	//		SymbolType . identifier
+	//		SymbolType . TemplateInstance
+	SymbolType parseSymbolType() {
+		bool is_global;
+		if (token.kind == TokenKind.global) {
+			is_global = true;
+			nextToken();
+		}
+		auto loc = token.loc;
+		
+		Type parse_one() {
+			with (TokenKind)
+			// TemplateInstance
+			if (token.kind == identifier && lookahead(1).kind == temp_inst) {
+				assert(0, "TemplateInstance has not been implemented.");
+			}
+			// identifier
+			else if (token.kind == identifier) {
+				auto t0 = new IdentifierType(token.loc, token.str);
+				nextToken();
+				return t0;
+			}
+			// error
+			else {
+				this.error(token.loc, "An identifier expected after \x1b[46m.\x1b[0m or \x1b[46m_.\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+				return null;
+			}
+		}
+		
+		auto ts = [parse_one()];
+		while (token.kind == TokenKind.dot) {
+			nextToken();	// get rid of .
+			auto t1 = parse_one();
+			ts ~= t1;
+		}
+		
+		return new SymbolType(loc, ts, is_global);
+	}
+	
+	//	TupleType:
+	//		( Types )
+	//		( Types , )
+	//	Types:
+	//		Type
+	//		Types , Type
+	Type parseTupleType() {
+		auto loc = token.loc;
+		nextToken();	// get rid of (
+		auto ts = [parseType()];
+		with (TokenKind)
+		while (token.kind == comma) {
+			nextToken();	// get rid of ,
+			if (token.kind == rparen) break;
+			ts ~= parseType();
+		}
+		check(TokenKind.rparen);
+		if (ts.length == 1) {
+			return ts[0];
+		}
+		else {
+			return new TupleType(loc, ts);
+		}
+	}
+	
+	/* ************************ Statement ************************ */
+	Statement parseStatement() {
+		with (TokenKind)
+		// ExpressionStatement
+		if (isFirstOfExpression) {
+			return parseExpressionStatement();
+		}
+		// Declaration
+		else if (isFirstOfDeclaration) {
+			return parseDeclaration();
+		}
+		else
+		switch (token.kind) {
+			case mul:				return parseLabelStatement();
+			case if_:				return parseIfElseStatement();
+			case while_:			return parseWhileStatement();
+			case do_:				return parseDoWhileStatement();
+			case for_:				return parseForStatement();
+			case foreach_:
+			case foreach_reverse_:	return parseForeachStatement(token.kind == foreach_reverse_);
+			case break_:			return parseBreakStatement();
+			case continue_:			return parseContinueStatement();
+			case goto_:				return parseGotoStatement();
+			case return_:			return parseReturnStatement();
+			case lbrace:			return parseBlockStatement();
+			default:
+				this.error(token.loc, "A statement was expected, not \x1b[46m", token.str, "\x1b[0m.");
+				return null;
+		}
+	}
+	private pure bool isFirstOfStatement(TokenKind x) @property {
+		with (TokenKind)
+		return
+			   isFirstOfExpression(x)
+			|| isFirstOfDeclaration(x)
+			|| x.among!(
+				mul,			if_,
+				while_,			for_,			foreach_,		foreach_reverse_,
+				break_,			continue_,		goto_,			return_,
+				identifier,		lbrace,
+			) != 0;
+	}
+	private bool isFirstOfStatement() @property {
+		return isFirstOfStatement(token.kind);
+	}
+	//	ExpressionStatement:
+	//		Expression ;
+	ExpressionStatement parseExpressionStatement() {
+		auto loc = token.loc;
+		auto exp = parseExpression();
+		check(TokenKind.semicolon);
+		return new ExpressionStatement(loc, exp);
+	}
+	//	IfElseStatement:
+	//		if Expression : Statement else Statement
+	//		if Expression : Statement
+	//		if Expression BlockStatement else Statement
+	//		if Expression BlockStatement
+	IfElseStatement parseIfElseStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of if
+		auto cond = parseExpression();
+		Statement if_body;
+		Statement else_body;
+		if (token.kind == TokenKind.colon) {
+			nextToken();	// get rid of :
+			if_body = parseStatement();
+		}
+		else if (token.kind == TokenKind.lbrace) {
+			if_body = parseBlockStatement();
+		}
+		else {
+			this.error(loc, "\x1b[46m:\x1b[0m or \x1b[46m{ ... }\x1b[0m expected after \x1b[46m:\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+		}
+		
+		if (token.kind == TokenKind.else_) {
+			nextToken();	// get rid of else
+			else_body = parseStatement();
+		}
+		return new IfElseStatement(loc, cond, if_body, else_body);
+	}
+	//	WhileStatement:
+	//		while Expression : Statement
+	WhileStatement parseWhileStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of while
+		auto cond = parseExpression();
+		check(TokenKind.colon);
+		auto body = parseStatement();
+		return new WhileStatement(loc, cond, body);
+	}
+	// DoWhileStatement:
+	//		do Statement while Expression ;
+	DoWhileStatement parseDoWhileStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of do
+		auto body = parseStatement();
+		check(TokenKind.while_);
+		auto exp = parseExpression();
+		check(TokenKind.semicolon);
+		return new DoWhileStatement(loc, body, exp);
+	}
+	//	ForStatement:
+	//		for Statement Expression ; Expression : Statement
+	ForStatement parseForStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of for
+		auto init = parseStatement();
+		auto test = parseExpression();
+		check(TokenKind.semicolon);
+		auto exec = parseExpression();
+		check(TokenKind.colon);
+		auto body = parseStatement();
+		return new ForStatement(loc, init, test, exec, body);
+	}
+	//	ForeachStatement:
+	//		foreach ForeachArguments_opt ; Expression               : Statement
+	//		foreach ForeachArguments_opt ; Expression .. Expression : Statement
+	//	ForeachArguments:
+	//		ForeachArgument , ForeachArguments
+	//		ForeachArgument
+	//	ForeachArgument:
+	//		identifier
+	//		identifier : Type
+	//		_
+	//		_ : Type
+	//	ForeachReverseStatement:
+	//		foreach_reverse ForeachArguments_opt ; Expression               : Statement
+	//		foreach_reverse ForeachArguments_opt ; Expression .. Expression : Statement
+	Statement parseForeachStatement(bool is_reverse = false) {
+		auto loc = token.loc;
+		nextToken();	// get rid of foreach
+		string[] arg_names;
+		Type[] arg_types;
+		with (TokenKind)
+		while (token.kind.among!(identifier, any)) {
+			auto str = token.str;
+			nextToken();	// get rid of identifier _
+			Type tp;
+			if (token.kind == colon) {
+				nextToken();	// get rid of :
+				tp = parseType();
+			}
+			arg_names ~= str;
+			arg_types ~= tp;
+		}
+		check(TokenKind.semicolon);
+		auto exp = parseExpression();
+		Expression exp2;
+		if (token.kind == TokenKind.dotdot) {
+			nextToken();	// get rid of ..
+			exp2 = parseExpression();
+		}
+		check(TokenKind.colon);
+		auto body = parseStatement();
+		if (is_reverse) return new ForeachReverseStatement(loc, arg_names, arg_types, exp, exp2, body);
+		else return new ForeachStatement(loc, arg_names, arg_types, exp, exp2, body);
+	}
+	//	BreakStatement:
+	//		break ;
+	//		break identifier ;
+	BreakStatement parseBreakStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of break
+		string str;
+		if (token.kind == TokenKind.identifier) {
+			str = token.str;
+			nextToken();	// get rid of identifier
+		}
+		check(TokenKind.semicolon);
+		return new BreakStatement(loc, str);
+	}
+	//	ContinueStatement:
+	//		continue ;
+	//		continue identifier ;
+	ContinueStatement parseContinueStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of continue
+		string str;
+		if (token.kind == TokenKind.identifier) {
+			str = token.str;
+			nextToken();	// get rid of identifier
+		}
+		check(TokenKind.semicolon);
+		return new ContinueStatement(loc, str);
+	}
+	//	GotoStatement:
+	//		goto identifier ;
+	GotoStatement parseGotoStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of goto
+		string str;
+		if (token.kind == TokenKind.identifier) {
+			str = token.str;
+			nextToken();	// get rid of identifier
+		}
+		else {
+			this.error(loc, "A label was expected, not \x1b[46m", token.str, "\x1b[0m.");
+		}
+		check(TokenKind.semicolon);
+		return new GotoStatement(loc, str);
+	}
+	//	ReturnStatement:
+	//		return ;
+	//		return Expression ;
+	ReturnStatement parseReturnStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of return
+		Expression exp;
+		if (token.kind != TokenKind.semicolon) {
+			exp = parseExpression();
+		}
+		check(TokenKind.semicolon);
+		return new ReturnStatement(loc, exp);
+	}
+	//	LabelStatement:
+	//		* identifier
+	LabelStatement parseLabelStatement() {
+		auto loc = token.loc;
+		check(TokenKind.mul);
+		auto str = token.str;
+		if (token.kind == TokenKind.identifier) {
+			nextToken();	// get rid of identifier
+			return new LabelStatement(loc, str);
+		}
+		else {
+			this.error(loc, "An identifier for label declaration was expected, not \x1b[46m", token.str, "\x1b[0m.");
+			return null;
+		}
+	}
+	//	BlockStatement:
+	//		{ }
+	//		{ StatementList }
+	//	StatementList:
+	//		Statement
+	//		Statement StatementList
+	BlockStatement parseBlockStatement() {
+		auto loc = token.loc;
+		nextToken();	// get rid of {
+		Statement[] stmts;
+		while (isFirstOfStatement) {
+			stmts ~= parseStatement();
+			// invalid statement
+			if (!stmts[$-1]) break;
+		}
+		check(TokenKind.rbrace);
+		return new BlockStatement(loc, stmts);
+	}
+	
+	/* Declaration */
+	//	Declaration:
+	//		LetDeclaration
+	//		FuncDeclaration
+	//		StructDeclaration
+	//		TypedefDeclaration
+	ASTNode parseDeclaration() {
+		with (TokenKind)
+		switch (token.kind) {
+		case let:
+			return parseLetDeclaration();
+		case func:
+			return parseFuncDeclaration();
+		case struct_:
+			return parseStructDeclaration();
+		case typedef:
+			return parseTypedefDeclaration();
+		default:
+			this.error(token.loc, "A declaration was expected, not \x1b[46m", token.str, "\x1b[0m.");
+			return null;
+		}
+	}
+	private pure bool isFirstOfDeclaration(TokenKind x) @property {
+		with (TokenKind)
+		return
+			x.among!(
+				let,
+				func,
+				struct_,
+				typedef,
+			) != 0;
+	}
+	private bool isFirstOfDeclaration() @property {
+		return isFirstOfDeclaration(token.kind);
+	}
+	
+	//	LetDeclaration:
+	//		let LetDeclBodies ;
+	//		let LetDeclBodies , ;
+	//	LetDeclBodies:
+	//		LetDeclBody
+	//		LetDeclBody , LetDeclBodies
+	//	LetDeclBody:
+	//		identifier = Expression
+	//		identifier : Type
+	//		identifier : Type = Expression
+	LetDeclaration parseLetDeclaration() {
+		auto loc = token.loc;
+		nextToken();	// get rid of let
+		
+		Location[] idlocs;
+		string[] names;
+		Type[] tps;
+		Expression[] exps;
+		
+		with (TokenKind)
+		while (token.kind == identifier) {
+			auto idloc = token.loc;
+			auto name = token.str;
+			nextToken();	// get rid of identifier
+			
+			Type tp;
+			Expression exp;
+			
+			// = Expression
+			if (token.kind == ass) {
+				nextToken();	// get rid of =
+				exp = parseExpression();
+			}
+			else if (token.kind == colon) {
+				nextToken();	// get rid of :
+				tp = parseType();
+				if (token.kind == ass) {
+					nextToken();	// get rid of =
+					exp = parseExpression();
+				}
+			}
+			if (token.kind == comma) nextToken();
+			
+			if (!tp && !exp) {
+				this.error(idloc, "No types or expressions after the identifier \x1b[46m", name, "\x1b[0m");
+			}
+			else {
+				idlocs ~= idloc;
+				names ~= name;
+				tps ~= tp;
+				exps ~= exp;
+			}
+		}
+		check(TokenKind.semicolon);
+		return new LetDeclaration(loc, idlocs, names, tps, exps);
+	}
+	
+	//	FuncDeclaration:
+	//		func identifier (: Type)_opt FunctionArgumentList_opt BlockStatement
+	//		func identifeir (: Type)_opt FunctionArgumentList_opt = Expression ;
+	//	FunctionArgumentList:
+	//		FunctionArgument
+	//		FunctionArgument FunctionArgumentList
+	//	FunctionArgument:
+	//		identifier (: Type)_opt
+	//		_ (: Type)_opt
+	FuncDeclaration parseFuncDeclaration() {
+		auto loc = token.loc;
+		nextToken();	// get rid of func
+		
+		Location idloc;
+		string name;
+		if (token.kind != TokenKind.identifier) {
+			this.error(loc, "An identifier expected after \x1b[46mfunc\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+		}
+		else {
+			idloc = token.loc;
+			name = token.str;
+			nextToken();	// get rid of identifier
+		}
+		
+		Type ret_type;
+		if (token.kind == TokenKind.colon) {
+			nextToken();	// get rid of :
+			ret_type = parseType();
+		}
+		
+		Location[] arglocs;
+		string[] args;
+		Type[] types;
+		with (TokenKind)
+		while (token.kind.among!(identifier, any)) {
+			auto argloc = token.loc;
+			string arg = token.str;
+			Type type;
+			nextToken();	// get rid of identifier
+			if (token.kind == colon) {
+				nextToken();	// get rid of :
+				type = parseType();
+			}
+			arglocs ~= argloc;
+			args ~= arg;
+			types ~= type;
+			
+		}
+		
+		Statement body;
+		with (TokenKind)
+		if (token.kind == lbrace) {
+			body = parseBlockStatement();
+		}
+		else if (token.kind == ass) {
+			auto assloc = token.loc;
+			nextToken();
+			auto exp = parseExpression();
+			check(semicolon);
+			body = new BlockStatement(assloc, [new ReturnStatement(assloc, exp)]);
+		}
+		
+		auto result = new FuncDeclaration(loc, idloc, name, ret_type, arglocs, args, types, body);
+		return result;
+	}
+	
+	//	StructDeclaration:
+	//		struct identifier { StructBodyList }
+	//	StructBodyList:
+	//		StructBody
+	//		StructBody StructBodyList
+	//	StructBody:
+	//		Declaration
+	StructDeclaration parseStructDeclaration() {
+		auto loc = token.loc;
+		nextToken();	// get rid of struct
+		if (token.kind != TokenKind.identifier) {
+			this.error(loc,"An identifier expected after \x1b[46mstruct\x1b[0m, not \x1b[46m", token.str, "\x1b[0m.");
+			return null;
+		}
+		string name = token.str;
+		nextToken();	// get rid of identifier
+		check(TokenKind.lbrace);
+		ASTNode[] mems;
+		while (isFirstOfDeclaration) {
+			mems ~= parseDeclaration();
+		}
+		check(TokenKind.rbrace);
+		return new StructDeclaration(loc, name, mems);
+	}
+	
+	//	Typedef:
+	//		typedef identifier =_opt Type ;
+	TypedefDeclaration parseTypedefDeclaration() {
+		bool is_error = false;
+		auto loc = token.loc;
+		string name;
+		nextToken();	// get rid of typedef
+		if (token.kind != TokenKind.identifier) {
+			this.error(loc, "An identifier expected after \x1b[46mfunc\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+			is_error = true;
+		}
+		else {
+			name = token.str;
+			nextToken();	// get rid of identifier
+		}
+		if (token.kind == TokenKind.ass) nextToken();	// get rid of =
+		auto type = parseType();
+		check(TokenKind.semicolon);
+		return new TypedefDeclaration(loc, name, type);
+	}
 }
 

@@ -1,6 +1,10 @@
+/**
+ * message.d
+ * Yields error messages.
+ */
 module message;
 
-import lexer: Location;
+import token: Location;
 import std.stdio;
 
 /**

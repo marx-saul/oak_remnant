@@ -1,13 +1,16 @@
+/**
+ * astbase.d
+ * Defines ASTs generated from the parser.
+ */
 module astbase;
 
 import std.typecons;
 import parse_time_visitor;
-import lexer;
+import token, lexer;
 
 alias Vis = ParseTimeVisitor;
 
 abstract class ASTNode {
-	bool is_error;
 	Location loc;
 	this (Location loc) {
 		this.loc = loc;
@@ -17,14 +20,20 @@ abstract class ASTNode {
 	}
 }
 
-/* ************** Helpers ************** */
-struct Identifier {
-	Location loc;
-	string name;
-	bool is_global;	 // global access _.id
+/* **************************** Module **************************** */
+final class Module : ASTNode {
+	string[] modname;
+	ASTNode[] decls;
+	this(Location loc, string[] modname, ASTNode[] decls) {
+		super(loc);
+		this.modname = modname, this.decls = decls;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
 }
 
-/* ************** Expressions ************** */
+/* **************************** Expressions **************************** */
 abstract class Expression : ASTNode {
 	this(Location loc) {
 		super(loc);
@@ -96,6 +105,20 @@ final class AscribeExpression : Expression {
 	}
 }
 
+final class WhenElseExpression : Expression {
+	Expression cond;
+	Expression when_exp;
+	Expression else_exp;
+	
+	this (Location loc, Expression cond, Expression when_exp, Expression else_exp) {
+		super(loc);
+		this.cond = cond, this.when_exp = when_exp, this.else_exp = else_exp;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
 final class IntegerExpression : Expression {
 	string str;
 
@@ -129,14 +152,11 @@ final class StringExpression : Expression {
 	}
 }
 final class IdentifierExpression : Expression {
-	Identifier id;
+	string name;
+	bool is_global;
 	this(Location loc, string name, bool is_global=false) {
 		super(loc);
-		this.id.loc = loc, this.id.name = name, this.id.is_global = is_global;
-	}
-	this(Location loc, Identifier id) {
-		super(loc);
-		this.id = id;
+		this.name = name, this.is_global = is_global;
 	}
 	override void accept(Vis v) {
 		v.visit(this);
@@ -230,6 +250,21 @@ final class NewExpression : Expression {
 	}
 }
 
+final class LambdaExpression : Expression {
+	Type ret_type;
+	Location[] arglocs;
+	string[] args;
+	Type[] types;
+	Statement body;
+	this(Location loc, Type ret_type, Location[] arglocs, string[] args, Type[] types, Statement body) {
+		super(loc);
+		this.ret_type = ret_type, this.arglocs = arglocs, this.args = args, this.types = types, this.body = body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
 final class ArrayExpression : Expression {
 	Expression[] elems;
 	this(Location loc, Expression[] elems) {
@@ -287,6 +322,19 @@ final class TypeidExpression : Expression {
 	}
 }
 
+final class BlockExpression : Expression {
+	Statement[] stmts;
+	Expression exp;
+	this(Location loc, Statement[] stmts, Expression exp) {
+		super(loc);
+		this.stmts = stmts;
+		this.exp = exp;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
 final class MixinExpression : Expression {
 	Mixin node;
 	this(Mixin node) {
@@ -298,7 +346,7 @@ final class MixinExpression : Expression {
 	}
 }
 
-/* ************** Types ************** */
+/* **************************** Types **************************** */
 abstract class Type : ASTNode {
 	this(Location loc) {
 		super(loc);
@@ -330,23 +378,12 @@ final class PointerType : Type {
 	}
 }
 
-// int32, bool, string,
+// int32, bool, string, etc.
 final class BuiltInType : Type {
 	TokenKind kind;
 	this(Location loc, TokenKind kind) {
 		super(loc);
 		this.kind = kind;
-	}
-	override void accept(Vis v) {
-		v.visit(this);
-	}
-}
-
-final class TupleType : Type {
-	Type[] ents;
-	this(Location loc, Type[] ents) {
-		super(loc);
-		this.ents = ents;
 	}
 	override void accept(Vis v) {
 		v.visit(this);
@@ -375,20 +412,329 @@ final class AssocArrayType : Type {
 	}
 }
 
-/* ************** TemplateInstance ************** */
-final class TemplateInstance : ASTNode {
-	Identifier id;
-	ASTNode[] params;
-	this(Location loc, string name, ASTNode[] params) {
+final class TupleType : Type {
+	Type[] ents;
+	this(Location loc, Type[] ents) {
 		super(loc);
-		this.id.loc = loc, this.id.name = name, this.params = params;
+		this.ents = ents;
 	}
 	override void accept(Vis v) {
 		v.visit(this);
 	}
 }
 
-/* ************** Mixin ************** */
+final class SymbolType : Type {
+	Type[] types;	// IdentifierType or TemplateInstanceType
+	this(Location loc, Type[] types, bool is_global=false) {
+		super(loc);
+		this.types = types;
+		// set is_global
+		if (types.length > 0 && types[0] !is null) {
+			if (typeid(types[0]) == typeid(IdentifierType)) {
+				auto t0 = cast(IdentifierType) types[0];
+				t0.is_global = is_global;
+			}
+			else if (typeid(types[0]) == typeid(TemplateInstanceType)) {
+				auto t0 = cast(TemplateInstanceType) types[0];
+				if (t0.node) t0.node.is_global = is_global;
+			}
+			else assert(0);
+		}
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class IdentifierType : Type {
+	string name;
+	bool is_global;
+	this(Location loc, string name, bool is_global=false) {
+		super(loc);
+		this.name = name, this.is_global = is_global;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class TemplateInstanceType : Type {
+	TemplateInstance node;
+	this(TemplateInstance node) {
+		super(node.loc);
+		this.node = node;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class MixinType : Type {
+	Mixin node;
+	this(Mixin node) {
+		super(node.loc);
+		this.node = node;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+/* **************************** Statements **************************** */
+alias Statement = ASTNode;
+
+final class ExpressionStatement : Statement {
+	Expression exp;
+	this (Location loc, Expression exp) {
+		super(loc);
+		this.exp = exp;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class IfElseStatement : Statement {
+	Expression cond;
+	Statement if_body;
+	Statement else_body;
+	
+	this (Location loc, Expression cond, Statement if_body, Statement else_body) {
+		super(loc);
+		this.cond = cond, this.if_body = if_body, this.else_body = else_body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class WhileStatement : Statement {
+	Expression cond;
+	Statement body;
+	this (Location loc, Expression cond, Statement body) {
+		super(loc);
+		this.cond = cond, this.body = body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class DoWhileStatement : Statement {
+	Statement body;
+	Expression cond;
+	this (Location loc, Statement body, Expression cond) {
+		super(loc);
+		this.body = body, this.cond = cond;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class ForStatement : Statement {
+	Statement init;
+	Expression test;
+	Expression exec;
+	Statement body;
+	this (Location loc, Statement init, Expression test, Expression exec, Statement body) {
+		super(loc);
+		this.init = init, this.test = test, this.exec = exec; this.body = body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class ForeachStatement : Statement {
+	string[] vars;
+	Type[] types;
+	Expression exp;
+	Expression exp2;
+	Statement body;
+	this (Location loc, string[] vars, Type[] types, Expression exp, Expression exp2, Statement body) {
+		super(loc);
+		this.vars = vars, this.types = types, this.exp = exp, this.exp2 = exp2, this.body = body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class ForeachReverseStatement : Statement {
+	string[] vars;
+	Type[] types;
+	Expression exp;
+	Expression exp2;
+	Statement body;
+	this (Location loc, string[] vars, Type[] types, Expression exp, Expression exp2, Statement body) {
+		super(loc);
+		this.vars = vars, this.types = types, this.exp = exp, this.exp2 = exp2, this.body = body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class BreakStatement : Statement {
+	string label;
+	this (Location loc, string label="") {
+		super(loc);
+		this.label = label;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class ContinueStatement : Statement {
+	string label;
+	this (Location loc, string label="") {
+		super(loc);
+		this.label = label;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class GotoStatement : Statement {
+	string label;
+	this (Location loc, string label) {
+		super(loc);
+		this.label = label;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class ReturnStatement : Statement {
+	Expression exp;
+	this (Location loc, Expression exp=null) {
+		super(loc);
+		this.exp = exp;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class LabelStatement : Statement {
+	string label;
+	this (Location loc, string label) {
+		super(loc);
+		this.label = label;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class BlockStatement : Statement {
+	Statement[] stmts;
+	this(Location loc, Statement[] stmts) {
+		super(loc);
+		this.stmts = stmts;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class MixinStatement : Statement {
+	Mixin node;
+	this(Mixin node) {
+		super(node.loc);
+		this.node = node;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+/* **************************** Declaration *************************** */
+final class LetDeclaration : Statement {
+	Location[] idlocs;
+	string[] names;
+	Type[] types;
+	Expression[] inits;
+	this (Location loc, Location[] idlocs, string[] names, Type[] types, Expression[] inits) {
+		super(loc);
+		this.idlocs = idlocs, this.names = names, this.types = types, this.inits = inits;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class FuncDeclaration : Statement {
+	Location idloc;
+	string name;
+	Type ret_type;
+	Location[] arglocs;
+	string[] args;
+	Type[] argtps;
+	Statement body;
+	this (Location loc, Location idloc, string name, Type ret_type, 
+		Location[] arglocs, string[] args, Type[] argtps, Statement body) {
+		super(loc);
+		this.idloc = idloc, this.name = name, this.ret_type = ret_type,
+		this.arglocs = arglocs, this.args = args, this.argtps = argtps, this.body = body;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+class AggregateDeclaration : Statement {
+	string name;
+	ASTNode[] mems;
+	this (Location loc, string name, ASTNode[] mems) {
+		super(loc);
+		this.name = name, this.mems = mems;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+final class StructDeclaration : AggregateDeclaration {
+	this (Location loc, string name, ASTNode[] mems) {
+		super(loc, name, mems);
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+final class TypedefDeclaration : Statement {
+	string name;
+	Type type;
+	this (Location loc, string name, Type type) {
+		super(loc);
+		this.name = name, this.type = type;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+/* **************************** TemplateInstance **************************** */
+final class TemplateInstance : ASTNode {
+	Location idloc;
+	string name;
+	Token[][] params;
+	bool is_global;
+	this(Location loc, Location idloc, string name, Token[][] params, bool is_global=false) {
+		super(loc);
+		this.idloc = idloc, this.name = name, this.params = params, this.is_global = is_global;
+	}
+	override void accept(Vis v) {
+		v.visit(this);
+	}
+}
+
+/* **************************** Mixin **************************** */
 final class Mixin : ASTNode {
 	Expression exp;
 	this(Location loc, Expression exp) {
@@ -400,7 +746,7 @@ final class Mixin : ASTNode {
 	}
 }
 
-/* ************** Typeid ************** */
+/* **************************** Typeid **************************** */
 final class Typeid : ASTNode {
 	Token[] tokens;
 	this(Location loc) {
@@ -410,179 +756,4 @@ final class Typeid : ASTNode {
 	override void accept(Vis v) {
 		v.visit(this);
 	}
-}
-
-/* ************** To String ************** */
-final class ToStringVisitor : ParseTimeVisitor {
-	string result;
-	
-	override void visit(ASTNode) { assert(0); }
-
-	/* Expressions */
-	override void visit(BinaryExpression exp) {
-		result ~= "(";
-		if (exp.left)  exp. left.accept(this);
-		if (exp.op == TokenKind.apply) result ~= " ";
-		else result ~= " " ~ token_dictionary[exp.op] ~ " ";
-		if (exp.right) exp.right.accept(this);
-		result ~= ")";
-	}
-	override void visit(UnaryExpression exp) {
-		result ~= token_dictionary[exp.op];
-		result ~= "(";
-		if (exp.exp) exp.exp.accept(this);
-		result ~= ")";
-	}
-	override void visit(IndexingExpression exp) { assert(0); }
-	override void visit(SlicingExpression exp)  { assert(0); }
-	override void visit(AscribeExpression exp) {
-		result ~= "(";
-		if (exp.exp) exp.exp.accept(this);
-		result ~= " as ";
-		if (exp.type) exp.type.accept(this);
-		result ~= ")";
-	}
-	override void visit(IntegerExpression exp) {
-		result ~= exp.str;
-	}
-	override void visit(RealNumberExpression exp) {
-		result ~= exp.str;
-	}
-	override void visit(StringExpression exp) {
-		result ~= "`" ~ exp.str ~ "`";
-	}
-	override void visit(IdentifierExpression exp) {
-		if (exp.id.is_global) result ~= "_.";
-		result ~= exp.id.name;
-	}
-	override void visit(AnyExpression) {
-		result ~= "_";
-	}
-	override void visit(FalseExpression) {
-		result ~= "false";
-	}
-	override void visit(TrueExpression) {
-		result ~= "true";
-	}
-	override void visit(NullExpression) {
-		result ~= "null";
-	}
-	override void visit(ThisExpression) {
-		result ~= "this";
-	}
-	override void visit(SuperExpression) {
-		result ~= "super";
-	}
-	override void visit(DollarExpression) {
-		result ~= "$";
-	}
-	override void visit(UnitExpression) {
-		result ~= "()";
-	}
-	override void visit(TupleExpression exp) {
-		result ~= "(";
-		foreach (e; exp.ents) {
-			if (e) e.accept(this);
-			result ~= ", ";
-		}
-		result = result[0 .. $-2];
-		result ~= ")";
-	}
-	override void visit(NewExpression exp) {
-		result ~= "new ";
-		if (exp.type) exp.type.accept(this);
-	}
-	override void visit(ArrayExpression exp) {
-		result ~= "[";
-		foreach (e; exp.elems) {
-			if (e) e.accept(this);
-			result ~= ", ";
-		}
-		result = result[0 .. $ > 2 ? $-2 : $];
-		result ~= "]";
-	}
-	override void visit(AssocArrayExpression exp) {
-		result ~= "[";
-		foreach (i; 0 .. exp.keys.length) {
-			result ~= exp.keys[i];
-			result ~= ": ";
-			if (exp.values[i]) exp.values[i].accept(this);
-			result ~= ", ";
-		}
-		result = result[0 .. $ > 2 ? $-2 : $];
-		result ~= "]";
-	}
-	override void visit(BuiltInTypePropertyExpression exp) {
-		result ~= token_dictionary[exp.type];
-		result ~= ".";
-		result ~= exp.str;
-	}
-	override void visit(TemplateInstanceExpression exp) {
-		if (exp.node) exp.node.accept(this);
-	}
-	override void visit(TypeidExpression exp) {
-		if (exp.node) exp.node.accept(this);
-	}
-	override void visit(MixinExpression exp) {
-		if (exp.node) exp.node.accept(this);
-	}
-
-	/* Types */
-	override void visit(Type type) { assert(0); }
-	override void visit(FunctionType type) {
-		result ~= "(";
-		if (type.ran) type.ran.accept(this);
-		result ~= " -> ";
-		if (type.dom) type.dom.accept(this);
-		result ~= ")";
-	}
-	override void visit(PointerType type) {
-		result ~= "#(";
-		if (type.type) type.type.accept(this);
-		result ~= ")";
-	}
-	override void visit(BuiltInType type) {
-		result ~= token_dictionary[type.kind];
-	}
-	override void visit(TupleType type) {
-		result ~= "(";
-		foreach (t; type.ents) {
-			if (t) t.accept(this);
-			result ~= ", ";
-		}
-		result = result[0 .. $-2];
-		result ~= ")";
-	}
-	override void visit(ArrayType type) {
-		result ~= "[";
-		if (type.elem) type.elem.accept(this);
-		result ~= "]";
-	}
-	override void visit(AssocArrayType type) {
-		result ~= "[";
-		if (type.key)   type.  key.accept(this);
-		result ~= " : ";
-		if (type.value) type.value.accept(this);
-		result ~= "]";
-	}
-
-	/* TemplateInstance */
-	override void visit(TemplateInstance ti) {
-		result ~= "TemplateInstance";
-	}
-	/* Mixin */
-	override void visit(Mixin m) {
-		result ~= "Mixin";
-	}
-	/* Typeid */
-	override void visit(Typeid t) {
-		result ~= "Typeid";
-	}
-}
-
-string to_string(ASTNode node) {
-	if (node is null) return "";
-	auto vis = new ToStringVisitor;
-	node.accept(vis);
-	return vis.result;
 }
