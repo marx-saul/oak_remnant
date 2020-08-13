@@ -7,15 +7,34 @@
  */
 module astbase_help;
 
-import token, lexer, astbase, parse_time_visitor;
+import token, lexer, ast, visitor;
 
 /* ************** To String ************** */
-final class ToStringVisitor : ParseTimeVisitor {
-	string result;
+final class ToStringVisitor : Visitor {
+	string result;		/// the result is stored here
+	//private depth;		/// depth of { }
 	
+	/* astnode.d */
 	override void visit(ASTNode) { assert(0); }
 	
-	/* Module */
+	/* aggregate.d */
+	override void visit(AggregateDeclaration agd) {
+		with (AGG)
+		final switch (agd.kind) {
+			case struct_:			result ~= "struct ";			break;
+			case union_:			result ~= "union ";				break;
+			case class_:			result ~= "class ";				break;
+			case interface_:		result ~= "interface ";			break;
+		}
+		result ~= agd.id.name ~ " {\n";
+		foreach (decl; agd.decls) {
+			decl.accept(this);
+			result ~= "\n";
+		}
+		result ~= "}";
+	}
+
+	/* module_.d */
 	override void visit(Module mod) {
 		if (mod.modname.length > 0) {
 			result ~= "module ";
@@ -30,16 +49,53 @@ final class ToStringVisitor : ParseTimeVisitor {
 			result ~= "\n";
 		}
 	}
+
+	/* declaration.d */
+	override void visit(FuncArgument arg) {
+		result ~= arg.id.name;
+		if (arg.tp) {
+			result ~= ":";
+			arg.tp.accept(this);
+		}
+	}
+	override void visit(FuncDeclaration fd) {
+		result ~= "func ";
+		result ~= fd.id.name ~ " ";
+		if (fd.args)
+			foreach (arg; fd.args) {
+				if (arg) arg.accept(this);
+				result ~= " ";
+			}
+		if (fd.body) fd.body.accept(this);
+	}
+	override void visit(LetDeclaration ld) {
+		result ~= "let ";
+		for (auto node = ld; node; node = node.next) {
+			assert(node !is node.next);
+			result ~= node.id.name;
+			if (node.tp) {
+				result ~= ":";
+				node.tp.accept(this);
+			}
+			if (node.exp) {
+				result ~= " = ";
+				node.exp.accept(this);
+			}
+			result ~= ", ";
+		}
+		result.length -= 2;
+		result ~= ";";
+	}
 	
-	/* Expression */
+	/* expression.d */
 	override void visit(Expression exp) { assert(0); }
 	override void visit(BinaryExpression exp) {
-		result ~= "(";
+		if (exp.parenthesized) result ~= "(";
+		scope(exit) if (exp.parenthesized) result ~= ")";
 		if (exp.left)  exp. left.accept(this);
 		if (exp.op == TokenKind.apply) result ~= " ";
 		else result ~= " " ~ token_dictionary[exp.op] ~ " ";
 		if (exp.right) exp.right.accept(this);
-		result ~= ")";
 	}
 	override void visit(UnaryExpression exp) {
 		result ~= token_dictionary[exp.op];
@@ -50,21 +106,21 @@ final class ToStringVisitor : ParseTimeVisitor {
 	override void visit(IndexingExpression exp) { assert(0); }
 	override void visit(SlicingExpression exp)  { assert(0); }
 	override void visit(AscribeExpression exp) {
-		result ~= "(";
+		if (exp.parenthesized) result ~= "(";
+		scope(exit) if (exp.parenthesized) result ~= ")";
 		if (exp.exp) exp.exp.accept(this);
 		result ~= " as ";
-		if (exp.type) exp.type.accept(this);
-		result ~= ")";
+		if (exp.tp) exp.tp.accept(this);
 	}
 	override void visit(WhenElseExpression exp) {
-		result ~= "(";
+		if (exp.parenthesized) result ~= "(";
+		scope(exit) if (exp.parenthesized) result ~= ")";
 		result ~= "when ";
 		if (exp.cond)     exp.cond.accept(this);
 		result ~= ": ";
 		if (exp.when_exp)   exp.when_exp.accept(this);
 		result ~= " else ";
 		if (exp.else_exp) exp.else_exp.accept(this);
-		result ~= ")";
 	}
 	override void visit(IntegerExpression exp) {
 		result ~= exp.str;
@@ -76,8 +132,8 @@ final class ToStringVisitor : ParseTimeVisitor {
 		result ~= "`" ~ exp.str ~ "`";
 	}
 	override void visit(IdentifierExpression exp) {
-		if (exp.is_global) result ~= "_.";
-		result ~= exp.name;
+		if (exp.id.is_global) result ~= "_.";
+		result ~= exp.id.name;
 	}
 	override void visit(AnyExpression) {
 		result ~= "_";
@@ -125,10 +181,10 @@ final class ToStringVisitor : ParseTimeVisitor {
 		result = result[0 .. $ > 2 ? $-2 : $];
 		result ~= "]";
 	}
-	override void visit(AssocArrayExpression exp) {
+	override void visit(AArrayExpression exp) {
 		result ~= "[";
 		foreach (i; 0 .. exp.keys.length) {
-			result ~= exp.keys[i];
+			if (exp.keys[i]) exp.values[i].accept(this);
 			result ~= ": ";
 			if (exp.values[i]) exp.values[i].accept(this);
 			result ~= ", ";
@@ -147,70 +203,20 @@ final class ToStringVisitor : ParseTimeVisitor {
 	override void visit(TypeidExpression exp) {
 		if (exp.node) exp.node.accept(this);
 	}
-	override void visit(BlockExpression) {
-		result ~= "{BlockExpression}";
-	}
 	override void visit(MixinExpression exp) {
 		if (exp.node) exp.node.accept(this);
 	}
 
-	/* Types */
-	override void visit(Type type) { assert(0); }
-	override void visit(FunctionType type) {
-		result ~= "(";
-		if (type.ran) type.ran.accept(this);
-		result ~= " -> ";
-		if (type.dom) type.dom.accept(this);
-		result ~= ")";
+	/* mixin_.d */
+	override void visit(Mixin m) {
+		result ~= "Mixin";
 	}
-	override void visit(PointerType type) {
-		result ~= "#(";
-		if (type.type) type.type.accept(this);
-		result ~= ")";
+
+	/* statement.d */
+	override void visit(Statement) { assert(0); }
+	override void visit(DeclarationStatement ds) {
+		if (ds.sym) ds.sym.accept(this);
 	}
-	override void visit(BuiltInType type) {
-		result ~= token_dictionary[type.kind];
-	}
-	override void visit(ArrayType type) {
-		result ~= "[";
-		if (type.elem) type.elem.accept(this);
-		result ~= "]";
-	}
-	override void visit(AssocArrayType type) {
-		result ~= "[";
-		if (type.key)   type.  key.accept(this);
-		result ~= " : ";
-		if (type.value) type.value.accept(this);
-		result ~= "]";
-	}
-	override void visit(TupleType type) {
-		result ~= "(";
-		foreach (t; type.ents) {
-			if (t) t.accept(this);
-			result ~= ", ";
-		}
-		result.length -= 2;
-		result ~= ")";
-	}
-	override void visit(SymbolType type) {
-		foreach (t; type.types) {
-			if (t) t.accept(this);
-			result ~= ".";
-		}
-		result.length -= 1;
-	}
-	override void visit(IdentifierType type) {
-		if (type.is_global) result ~= "_.";
-		result ~= type.name;
-	}
-	override void visit(TemplateInstanceType type) {
-		if (type.node) type.node.accept(this);
-	}
-	override void visit(MixinType type) {
-		if (type.node) type.node.accept(this);
-	}
-	
-	/* Statement */
 	override void visit(ExpressionStatement st) {
 		if (st.exp) st.exp.accept(this);
 		result ~= ";";
@@ -330,70 +336,95 @@ final class ToStringVisitor : ParseTimeVisitor {
 	}
 	override void visit(MixinStatement st) { result ~= "MixinStatement"; }
 	
-	/* Declaration */
-	override void visit(LetDeclaration ld) {
-		result ~= "let ";
-		foreach (i; 0 .. ld.names.length) {
-			auto name = ld.names[i], type = ld.types[i], init = ld.inits[i];
-			result ~= name;
-			if (type) {
-				result ~= ": ";
-				type.accept(this);
-			}
-			if (init) {
-				result ~= " = ";
-				init.accept(this);
-			}
-			result ~= ", ";
-		}
-		result.length -= 2;
-		result ~= ";";
-	}
-	override void visit(FuncDeclaration fd) {
-		result ~= "func " ~ fd.name;
-		if (fd.ret_type) {
-			result ~= ": ";
-			fd.ret_type.accept(this);
-		}
-		result ~= " ";
-		foreach (i; 0 .. fd.args.length) {
-			auto arg = fd.args[i], type = fd.argtps[i];
-			result ~= arg;
-			if (type) {
-				result ~= ": ";
-				type.accept(this);
-			}
-			result ~= " ";
-		}
-		result ~= "\n";
-		if (fd.body) fd.body.accept(this);
-	}
-	override void visit(AggregateDeclaration) { assert(0); }
+	/* struct_ */
 	override void visit(StructDeclaration sd) {
-		result ~= "struct " ~ sd.name ~ " {\n";
-		foreach (decl; sd.mems) {
-			if (decl) {
-				decl.accept(this);
-				result ~= "\n";
-			}
-		}
-		result ~= "}";
+		this.visit(cast(AggregateDeclaration) sd);
 	}
-	override void visit(TypedefDeclaration td) {
-		result ~= "typedef " ~ td.name ~ " = ";
-		if (td.type) td.type.accept(this);
-		result ~= ";";
+
+	/* symbol.d */
+	override void visit(Symbol sym) {
+		assert(0);
 	}
-	
-	/* TemplateInstance */
+	override void visit(ScopeSymbol sym) {
+		assert(0);
+	}
+
+	/* template_.d */
 	override void visit(TemplateInstance ti) {
 		result ~= "TemplateInstance";
 	}
-	/* Mixin */
-	override void visit(Mixin m) {
-		result ~= "Mixin";
+	override void visit(TemplateDeclaration td) {
+		assert(0);
 	}
-	/* Typeid */
+
+	/* type.d */
+	override void visit(Type type) { assert(0); }
+	override void visit(ErrorType type) { assert(0); }
+	override void visit(FuncType type) {
+		if (type.parenthesized) result ~= "(";
+		scope(exit) if (type.parenthesized) result ~= ")";
+		if (type.ran) type.ran.accept(this);
+		result ~= " -> ";
+		if (type.dom) type.dom.accept(this);
+	}
+	override void visit(LazyType type) {
+		if (type.parenthesized) result ~= "(";
+		scope(exit) if (type.parenthesized) result ~= ")";
+		result ~= "lazy";
+		if (type.tp) type.tp.accept(this);
+	}
+	override void visit(PtrType type) {
+		if (type.parenthesized) result ~= "(";
+		scope(exit) if (type.parenthesized) result ~= ")";
+		result ~= "#";
+		if (type.tp) type.tp.accept(this);
+		result ~= "";
+	}
+	override void visit(BuiltInType type) {
+		result ~= token_dictionary[type.kind];
+	}
+	override void visit(ArrayType type) {
+		if (type.parenthesized) result ~= "(";
+		scope(exit) if (type.parenthesized) result ~= ")";
+		result ~= "[";
+		if (type.tp) type.tp.accept(this);
+		result ~= "]";
+	}
+	override void visit(AArrayType type) {
+		if (type.parenthesized) result ~= "(";
+		scope(exit) if (type.parenthesized) result ~= ")";
+		result ~= "[";
+		if (type.key)   type.  key.accept(this);
+		result ~= " : ";
+		if (type.value) type.value.accept(this);
+		result ~= "]";
+	}
+	override void visit(TupleType type) {
+		result ~= "(";
+		foreach (t; type.tps) {
+			if (t) t.accept(this);
+			result ~= ", ";
+		}
+		result.length -= 2;
+		result ~= ")";
+	}
+	override void visit(SymbolType type) {
+		result ~= type.sym.recoverString();
+	}
+	override void visit(StructType type) {
+		this.visit(cast(SymbolType) type);
+	}
+	override void visit(TypedefType type) {
+		this.visit(cast(SymbolType) type);
+	}
+	/*override void visit(TemplateInstanceType type) {
+		if (type.node) type.node.accept(this);
+	}*/
+	/*override void visit(MixinType type) {
+		if (type.node) type.node.accept(this);
+	}*/
+	
+	/* typeid_.d */
 	override void visit(Typeid t) {
 		result ~= "Typeid";
 	}

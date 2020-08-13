@@ -2,7 +2,7 @@ module semantic;
 
 import token: Location;
 import ast: ASTNode;
-import semantic_time_visitor;
+import visitor;
 
 enum PASS {
 	none,

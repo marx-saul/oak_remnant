@@ -2,7 +2,7 @@ module aggregate;
 
 import token;
 import ast;
-import semantic_time_visitor;
+import visitor;
 import scope_;
 
 /**
@@ -29,7 +29,19 @@ class Fields {
 	}
 }
 
+enum AGG {
+	struct_,
+	union_, 
+	class_,
+	interface_,
+}
+
+/**
+ * declaration of aggreagete types.
+ * struct, union, class, interface
+ */
 abstract class AggregateDeclaration : ScopeSymbol {
+	AGG kind;
 	Location loc;
 	
 	/// declarations of symbols
@@ -40,10 +52,13 @@ abstract class AggregateDeclaration : ScopeSymbol {
 	TPSIZE structSize;
 	TPSIZE unionSize;
 	
-	this (SYMKind kind, string name, Location loc) {
-		super(kind, name, loc);
+	this (SYMKind kind, Identifier id, ASTNode[] decls) {
+		super(kind, id);
+		this.decls = decls;
 		this.fields = new Fields;
 	}
 	
-	
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
 }

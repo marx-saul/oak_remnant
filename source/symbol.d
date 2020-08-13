@@ -3,10 +3,8 @@ module symbol;
 import token;
 import ast;
 import scope_;
-import semantic_time_visitor;
+import visitor;
 import semantic;
-
-private alias Vis = SemanticTimeVisitor;
 
 /// Struct for identifiers
 struct Identifier {
@@ -17,15 +15,15 @@ struct Identifier {
 
 /// Kind of symbols
 enum SYMKind {
+	unsolved,			/// unsolved symbol
 	var,				/// defined by `let x:T = E;`
 	arg,				/// function argument
 	func,				/// defined by `func f ...`
 	typedef,			/// defined by typedef T = S;
 	struct_,			/// defined by struct S { ... }
-	// template_,
-	// instance,
-	// module_,
-	// package_,
+	template_,
+	instance,
+	module_,			/// modules
 }
 
 /// Symbol class
@@ -45,12 +43,14 @@ class Symbol : ASTNode {
 		this(kind, Identifier(name, loc));
 	}
 	
+	/// string of this identifier
 	string thisString() inout const {
 		if (id.is_global)
 			return "_." ~ id.name;
 		else
 			return id.name;
 	}
+	/// whole string of this symbol
 	final string recoverString() inout const {
 		if (parent)
 			return parent.recoverString() ~ "." ~ thisString();
@@ -59,8 +59,18 @@ class Symbol : ASTNode {
 		else
 			return thisString();
 	}
+
+	/// Get the top symbol.
+	final inout(Symbol) topSymbol() @property inout const {
+		Symbol result = cast(Symbol) this;
+		while (result.parent !is null) {
+			assert(result !is result.parent);
+			result = result.parent;
+		}
+		return cast(inout)result;
+	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -77,6 +87,10 @@ class ScopeSymbol : Symbol {
 	
 	Symbol isDeclared(string name) {
 		assert(0);
+	}
+	
+	override void accept(Visitor v) {
+		v.visit(this);
 	}
 }
 

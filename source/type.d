@@ -2,11 +2,10 @@ module type;
 
 import message;
 import token;
-import ast;
-import semantic_time_visitor;
+import astnode;
+import symbol;
+import visitor;
 import semantic;
-
-private alias Vis = SemanticTimeVisitor;
 
 enum TPKind {
 	error,
@@ -22,33 +21,54 @@ enum TPKind {
 	string_,
 	char_,
 	
-	func,	   // Type -> Type
-	prop,	   // unit -> Type which can be called without an argument, defined by func f;int32 { return 10; }
+	func,		// Type -> Type
+	lazy_,	 	// unit -> Type which can be called without an argument, defined by func f;int32 { return 10; }
 	ptr,		// # Type
-	//ref_,	   // ref Type
-	array,	  // [ Type ]
-	aarray,	 // [ Type : Type ]
-	tuple,	  // ( Type, Type, ... )
-	typedef,  // <A> for typedef A = B;
-	//tempinst
+	//ref_,		// ref Type
+	array,		// [ Type ]
+	aarray,		// [ Type : Type ]
+	tuple,		// ( Type, Type, ... )
 	
+	unsolved,	// unsolved symbol type
+	typedef,	// <A> for typedef A = B;
+	//tempinst
 	struct_,	// <S> for struct S {...}
 	//union_,
 	//class_,
+}
+
+TPKind toTPKind(TokenKind x) {
+	with (TokenKind)
+	switch (x) {
+		case int32:				return TPKind.int32;
+		case uint32:			return TPKind.uint32;
+		case int64:				return TPKind.int64;
+		case uint64:			return TPKind.uint64;
+		case real32:			return TPKind.real32;
+		case real64:			return TPKind.real64;
+		case unit:				return TPKind.unit;
+		case bool_:				return TPKind.bool_;
+		case string_:			return TPKind.string_;
+		case char_:				return TPKind.char_;
+		default:
+			assert(0, token_dictionary[x]);
+	}
 }
 
 alias TPSIZE = int;
 enum TPSIZEInvalid = -1;
 
 enum Sizeok {
-	undefined,		  /// size has not been calculated yet
-	inprocess,		  /// size is being calculated 
-	done,			   /// size has been calculated
+	undefined,				/// size has not been calculated yet
+	inprocess,				/// size is being calculated 
+	done,					/// size has been calculated
 }
 
 abstract class Type : ASTNode {
-	TPKind kind;		/// Kind of the type.
-	Sizeok sizeok;	  /// Cycle detection of the size
+	TPKind kind;			/// Kind of the type.
+	bool parenthesized;		/// is this type parenthesized
+
+	Sizeok sizeok;			/// Cycle detection of the size
 	
 	/**
 	 */
@@ -61,7 +81,7 @@ abstract class Type : ASTNode {
 	 */
 	TPSIZE size() @property;
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -79,7 +99,7 @@ final class ErrorType : Type {
 		return TPSIZEInvalid;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -93,21 +113,21 @@ final class BuiltInType : Type {
 	override TPSIZE size() @property {
 		with (TPKind)
 		switch (kind) {
-			case int32:	 return 4;
+			case int32:		return 4;
 			case uint32:	return 4;
-			case int64:	 return 8;
+			case int64:		return 8;
 			case uint64:	return 8;
 			case real32:	return 4;
 			case real64:	return 8;
-			case unit:	  return 4;
-			case bool_:	 return 4;
-			case string_:   return 8;
-			case char_:	 return 4;
+			case unit:		return 4;
+			case bool_:		return 4;
+			case string_:	return 8;
+			case char_:		return 4;
 			default:		assert(0);
 		}
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -126,16 +146,16 @@ final class FuncType : Type {
 		return 16u;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
 
-final class PropType : Type {
+final class LazyType : Type {
 	Type tp;
 	
 	this (Type tp) {
-		super(TPKind.prop);
+		super(TPKind.lazy_);
 		this.tp = tp;
 		sizeok = Sizeok.done;
 	}
@@ -144,7 +164,7 @@ final class PropType : Type {
 		return 16u;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -162,7 +182,7 @@ final class PtrType : Type {
 		return 8u;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -180,7 +200,7 @@ final class ArrayType : Type {
 		return 16u;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -199,7 +219,7 @@ final class AArrayType : Type {
 		return 8u;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -212,7 +232,7 @@ final class TupleType : Type {
 		this.tps = tps;
 	}
 	
-	TPSIZE _size;		   // remember the size
+	TPSIZE _size;			// remember the size
 	override TPSIZE size() @property {
 		if (sizeok == Sizeok.done) return _size;
 		
@@ -226,7 +246,7 @@ final class TupleType : Type {
 		return _size;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -243,13 +263,14 @@ class SymbolType : Type {
 		assert(0);
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
 
 /// An identifier type defined by typedef
 final class TypedefType : SymbolType {
+	import declaration: TypedefDeclaration;
 	/// return the TypedefDeclaration of this symbol
 	TypedefDeclaration td() @property {
 		return cast(TypedefDeclaration) sym;
@@ -319,7 +340,7 @@ final class TypedefType : SymbolType {
 		return _size;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
@@ -337,7 +358,7 @@ final class StructType : SymbolType {
 		return sd.structSize;
 	}
 	
-	override void accept(Vis v) {
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }

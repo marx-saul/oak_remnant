@@ -64,9 +64,8 @@ unittest {
 		}
 		
 		func main {
-			writeln app add (vector3 3.2 4.8 -1.2) (vector3 0.8 1.5 2.3);
+			writeln app add (vector3 3.2 4.8 -1.2) ((vector3 0.8 1.5 2.3));
 		}
-					
 		`);
 		auto node = parser.parse();
 		node.to_string().writeln;

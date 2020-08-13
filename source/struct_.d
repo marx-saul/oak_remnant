@@ -1,17 +1,16 @@
 module struct_;
 
 import token: Location;
-import ast;
-import semantic_time_visitor;
+import astnode;
+import symbol;
+import visitor;
 import aggregate;
 
-private alias Vis = SemanticTimeVisitor;
-
 final class StructDeclaration : AggregateDeclaration {
-    this(string name, Location loc) {
-        super(SYMKind.struct_, name, loc);
+    this(Identifier id, ASTNode[] decls) {
+        super(SYMKind.struct_, id, decls);
     }
-    override void accept(Vis v) {
+    override void accept(Visitor v) {
         v.visit(this);
     }
 }
