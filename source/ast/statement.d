@@ -1,12 +1,12 @@
-module statement;
+module ast.statement;
 
 import token;
-import astnode;
-import expression;
-import type;
-import symbol;
-import mixin_;
-import visitor;
+import ast.astnode;
+import ast.expression;
+import ast.type;
+import ast.symbol;
+import ast.mixin_;
+import visitor.visitor;
 
 enum STMT {
 	declaration,

@@ -1,9 +1,9 @@
-module mixin_;
+module ast.mixin_;
 
 import token;
-import astnode;
-import expression;
-import visitor;
+import ast.astnode;
+import ast.expression;
+import visitor.visitor;
 
 final class Mixin : ASTNode {
 	Location loc;

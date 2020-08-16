@@ -1,12 +1,12 @@
-module declaration;
+module ast.declaration;
 
 import token: Location;
-import scope_;
-import symbol;
-import type;
-import expression;
-import statement;
-import visitor;
+import semantic.scope_;
+import ast.symbol;
+import ast.type;
+import ast.expression;
+import ast.statement;
+import visitor.visitor;
 
 class FuncArgument : Symbol {
 	Type tp;				/// the argument of the type
@@ -22,7 +22,7 @@ class FuncArgument : Symbol {
 	}
 }
 
-class FuncDeclaration : Symbol {
+class FuncDeclaration : ScopeSymbol {
 	Type rettp;						/// return type of this function
 	FuncArgument[] args;			/// identifiers of arguments
 	BlockStatement body;			/// function body
@@ -30,7 +30,7 @@ class FuncDeclaration : Symbol {
 	SymbolTable args_table;			/// table of arguments, converted from `this.args`
 	
 	this (Identifier id, Type rettp, FuncArgument[] args, BlockStatement body) {
-		super (SYMKind.func, id);
+		super (SYMKind.func, id, []);
 		this.rettp = rettp, this.args = args, this.body = body;
 		
 		// set argument table
@@ -64,14 +64,6 @@ class FuncDeclaration : Symbol {
 		return _thisType;
 	}
 	private Type _thisType;	 // remember the type
-	
-	/// search for an identifier in this function scope.
-	/// Returns: null if the identifier was not declared in the scope
-	public Symbol isDeclared(Identifier id) {
-		if (auto result_sym = args_table.get(id.name))
-			return result_sym;
-		else return null;
-	}
 	
 	override void accept(Visitor v) {
 		v.visit(this);

@@ -1,10 +1,10 @@
-module expression;
+module ast.expression;
 
 import token;
-import astnode;
-import symbol;
-import type;
-import visitor;
+import ast.astnode;
+import ast.symbol;
+import ast.type;
+import visitor.visitor;
 
 abstract class Expression : ASTNode {
 	Location loc;				/// the location of this expression
@@ -255,7 +255,7 @@ final class NewExpression : Expression {
 }
 
 final class LambdaExpression : Expression {
-	import declaration, statement;
+	import ast.declaration, ast.statement;
 
 	Type ret_type;			/// return type
 	FuncArgument args;		/// function arguments
@@ -311,7 +311,7 @@ final class BuiltInTypePropertyExpression : Expression {
 }
 
 final class TemplateInstanceExpression : Expression {
-	import template_;
+	import ast.template_;
 	TemplateInstance node;		/// template instance
 	
 	this(TemplateInstance node) {
@@ -325,7 +325,7 @@ final class TemplateInstanceExpression : Expression {
 }
 
 final class TypeidExpression : Expression {
-	import typeid_;
+	import ast.typeid_;
 	Typeid node;				/// typeid 
 	
 	this(Typeid node) {
@@ -339,7 +339,7 @@ final class TypeidExpression : Expression {
 }
 
 final class MixinExpression : Expression {
-	import mixin_;
+	import ast.mixin_;
 	Mixin node;					/// mixin
 	
 	this(Mixin node) {

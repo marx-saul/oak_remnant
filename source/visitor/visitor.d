@@ -1,6 +1,6 @@
-module visitor;
+module visitor.visitor;
 
-import ast;
+import ast.ast;
 
 /// visitor class for ASTs.
 abstract class Visitor {
@@ -14,6 +14,7 @@ abstract class Visitor {
 	void visit(FuncArgument);
 	void visit(FuncDeclaration);
 	void visit(LetDeclaration);
+	void visit(TypedefDeclaration);
 
     /* expression.d */
     void visit(Expression);
@@ -49,6 +50,7 @@ abstract class Visitor {
 
 	/* module_.d */
 	void visit(Module);
+	void visit(Package);
 
     /* statement.d */
 	void visit(Statement);
@@ -97,3 +99,4 @@ abstract class Visitor {
 	/* typeid_.d */
     void visit(Typeid);
 }
+

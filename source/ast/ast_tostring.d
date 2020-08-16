@@ -1,13 +1,13 @@
 /**
- * astbase_help.d
+ * ast_tostring.d
  * Helper functions for astbase.ASTNode.
  *
  * *recovering the source code from astbase.ASTNode
  * *propagating parsing errors.
  */
-module astbase_help;
+module ast.ast_tostring;
 
-import token, lexer, ast, visitor;
+import token, lexer, ast.ast, visitor.visitor;
 
 /* ************** To String ************** */
 final class ToStringVisitor : Visitor {
@@ -19,16 +19,17 @@ final class ToStringVisitor : Visitor {
 	
 	/* aggregate.d */
 	override void visit(AggregateDeclaration agd) {
-		with (AGG)
-		final switch (agd.kind) {
+		with (SYMKind)
+		switch (agd.kind) {
 			case struct_:			result ~= "struct ";			break;
 			case union_:			result ~= "union ";				break;
 			case class_:			result ~= "class ";				break;
 			case interface_:		result ~= "interface ";			break;
+			default: assert(0);
 		}
 		result ~= agd.id.name ~ " {\n";
-		foreach (decl; agd.decls) {
-			decl.accept(this);
+		foreach (member; agd.members) {
+			if (member) member.accept(this);
 			result ~= "\n";
 		}
 		result ~= "}";
@@ -36,19 +37,20 @@ final class ToStringVisitor : Visitor {
 
 	/* module_.d */
 	override void visit(Module mod) {
-		if (mod.modname.length > 0) {
+		if (mod.names.length > 0) {
 			result ~= "module ";
-			foreach (name; mod.modname) {
+			foreach (name; mod.names) {
 				result ~= name ~ ".";
 			}
 			result.length -= 1;
 			result ~= ";\n";
 		}
-		foreach (decl; mod.decls) {
-			if (decl) decl.accept(this);
+		foreach (member; mod.members) {
+			if (member) member.accept(this);
 			result ~= "\n";
 		}
 	}
+	override void visit(Package) { assert(0); }
 
 	/* declaration.d */
 	override void visit(FuncArgument arg) {
@@ -86,6 +88,11 @@ final class ToStringVisitor : Visitor {
 		result.length -= 2;
 		result ~= ";";
 	}
+	override void visit(TypedefDeclaration td) {
+		result ~= "typedef " ~ td.id.name;
+		result ~= " = ";
+		if (td.tp) td.tp.accept(this);
+	}
 	
 	/* expression.d */
 	override void visit(Expression exp) { assert(0); }
@@ -98,10 +105,10 @@ final class ToStringVisitor : Visitor {
 		if (exp.right) exp.right.accept(this);
 	}
 	override void visit(UnaryExpression exp) {
+		if (exp.parenthesized) result ~= "(";
+		scope(exit) if (exp.parenthesized) result ~= ")";
 		result ~= token_dictionary[exp.op];
-		result ~= "(";
 		if (exp.exp) exp.exp.accept(this);
-		result ~= ")";
 	}
 	override void visit(IndexingExpression exp) { assert(0); }
 	override void visit(SlicingExpression exp)  { assert(0); }
@@ -409,7 +416,13 @@ final class ToStringVisitor : Visitor {
 		result ~= ")";
 	}
 	override void visit(SymbolType type) {
-		result ~= type.sym.recoverString();
+		if (type.ids.length == 0) return;
+		if (type.ids[0].is_global) result ~= "_.";
+		result ~= type.ids[0].name;
+		foreach (id; type.ids[1..$]) {
+			result ~= ".";
+			result ~= id.name;
+		}
 	}
 	override void visit(StructType type) {
 		this.visit(cast(SymbolType) type);

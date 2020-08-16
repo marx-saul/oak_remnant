@@ -6,8 +6,7 @@ module parser;
 
 import message;
 import token, lexer;
-import ast;
-import visitor;
+import ast.ast;
 import std.algorithm;
 import std.conv: to;
 
@@ -86,12 +85,12 @@ final class Parser(Range) : Lexer!Range {
 			}
 			check(TokenKind.semicolon);
 		}
-		ASTNode[] decls;
+		Symbol[] mems;
 		while (isFirstOfDeclaration) {
-			decls ~= parseDeclaration();
+			mems ~= parseDeclaration();
 		}
 		check(TokenKind.end_of_file);
-		return new Module(loc, modname, decls);
+		return new Module(loc, modname, mems);
 	}
 	
 	/* ************************ Expression ************************ */
@@ -813,38 +812,29 @@ final class Parser(Range) : Lexer!Range {
 			is_global = true;
 			nextToken();
 		}
-		auto loc = token.loc;
 		
-		Symbol parse_one() {
-			with (TokenKind)
-			// TemplateInstance
-			if (token.kind == identifier && lookahead(1).kind == temp_inst) {
-				assert(0, "TemplateInstance has not been implemented.");
+		Identifier[] ids;
+		if (token.kind == TokenKind.identifier) {
+			ids ~= Identifier(token.str, token.loc);
+			nextToken();	// get rid of identifier
+		}
+		else {
+			this.error(token.loc, "An identifier was expected, not \x1b[46m", token.str, "\x1b[0m.");
+			return null;
+		}
+		while (token.kind == TokenKind.dot) {
+			nextToken();	// get rid of .
+			if (token.kind == TokenKind.identifier) {
+				ids ~= Identifier(token.str, token.loc);
+				nextToken();	// get rid of identifier
 			}
-			// identifier
-			else if (token.kind == identifier) {
-				auto sym = new Symbol(SYMKind.unsolved, Identifier(token.str, token.loc));
-				nextToken();
-				return sym;
-			}
-			// error
 			else {
-				this.error(token.loc, "An identifier expected after \x1b[46m.\x1b[0m or \x1b[46m_.\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+				this.error(token.loc, "An identifier was expected, not \x1b[46m", token.str, "\x1b[0m.");
 				return null;
 			}
 		}
 		
-		Symbol sym = parse_one();
-		Symbol bottom_sym = sym;
-		while (token.kind == TokenKind.dot) {
-			nextToken();	// get rid of .
-			if (auto sym1 = parse_one()) {
-				sym1.parent = bottom_sym;
-				bottom_sym = sym1;
-			}
-		}
-		
-		return new SymbolType(TPKind.unsolved, sym);
+		return new SymbolType(TPKind.unsolved, ids);
 	}
 	
 	//	TupleType:
@@ -1290,7 +1280,7 @@ final class Parser(Range) : Lexer!Range {
 		
 		check(TokenKind.lbrace);
 		
-		ASTNode[] mems;
+		Symbol[] mems;
 		while (isFirstOfDeclaration) {
 			mems ~= parseDeclaration();
 		}

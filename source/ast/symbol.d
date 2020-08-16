@@ -1,10 +1,14 @@
-module symbol;
+/**
+ * ast/symbol.d
+ * defines Symbol, SymbolScope classes and SymbolTable class.
+ */
+module ast.symbol;
 
 import token;
-import ast;
-import scope_;
-import visitor;
-import semantic;
+import ast.ast;
+import semantic.scope_;
+import visitor.visitor;
+import semantic.semantic;
 
 /// Struct for identifiers
 struct Identifier {
@@ -16,14 +20,18 @@ struct Identifier {
 /// Kind of symbols
 enum SYMKind {
 	unsolved,			/// unsolved symbol
-	var,				/// defined by `let x:T = E;`
+	var,				/// variables : defined by `let x:T = E;`
 	arg,				/// function argument
-	func,				/// defined by `func f ...`
-	typedef,			/// defined by typedef T = S;
-	struct_,			/// defined by struct S { ... }
-	template_,
-	instance,
+	func,				/// function : defined by `func f ...`
+	typedef,			/// typedef-ed type : defined by typedef T = S;
+	struct_,			/// struct : defined by struct S { ... }
+	union_,
+	class_,
+	interface_,
+	template_,			/// template : defined by template T { ... }
+	instance,			/// T!(...)
 	module_,			/// modules
+	package_,			/// packages
 }
 
 /// Symbol class
@@ -31,10 +39,10 @@ class Symbol : ASTNode {
 	SYMKind kind;									/// kind of this identifier
 	Identifier id;									/// identifier
 	Location loc() @property { return id.loc; }		/// location
-	Symbol parent;									/// if this = <aa.bb.cc> then parent = <aa.bb>
 	
 	PASS pass = PASS.init;							/// semantic pass that is currently run on this symbol
-	Scope semsc;									/// used for semantic analysis
+	Scope semsc;									/// the scope this symbol belongs to or this symbol generates(when it is a scope-symbol)
+	Symbol parent;									/// parent symbol.
 	
 	this (SYMKind kind, Identifier id) {
 		this.kind = kind, this.id = id;
@@ -43,31 +51,33 @@ class Symbol : ASTNode {
 		this(kind, Identifier(name, loc));
 	}
 	
-	/// string of this identifier
-	string thisString() inout const {
-		if (id.is_global)
-			return "_." ~ id.name;
-		else
-			return id.name;
-	}
-	/// whole string of this symbol
 	final string recoverString() inout const {
-		if (parent)
-			return parent.recoverString() ~ "." ~ thisString();
-		else if (id.is_global)
-			return "_." ~ thisString();
-		else
-			return thisString();
-	}
-
-	/// Get the top symbol.
-	final inout(Symbol) topSymbol() @property inout const {
-		Symbol result = cast(Symbol) this;
-		while (result.parent !is null) {
-			assert(result !is result.parent);
-			result = result.parent;
+		auto sym = cast(Symbol) this;
+		string result;
+		
+		while (sym.parent) {
+			result = "." ~ sym.id.name ~ result;
+			sym = sym.parent;
 		}
-		return cast(inout)result;
+		result = sym.id.name ~ result;
+		if (sym.id.is_global) result = "_." ~ result;
+		
+		return result;
+	}
+	
+	// enclosing scope of this symbol
+	final Scope enclosing() @property {
+		with (SYMKind)
+		switch (kind) {
+			case unsolved:
+			case var:
+			case arg:
+			case typedef:
+				return semsc;
+			default:
+				assert(semsc);
+				return semsc.enclosing;
+		}
 	}
 	
 	override void accept(Visitor v) {
@@ -78,15 +88,12 @@ class Symbol : ASTNode {
 
 /// Symbol that introduces scopes
 class ScopeSymbol : Symbol {
-	this (SYMKind kind, Identifier id) {
-		super(kind, id);
-	}
-	this (SYMKind kind, string name, Location loc=Location.init) {
-		super(kind, Identifier(name, loc));
-	}
+	Symbol[] members;		/// symbols declared in this scope symbol
+	SymbolTable table;		/// the table of `members`
 	
-	Symbol isDeclared(string name) {
-		assert(0);
+	this (SYMKind kind, Identifier id, Symbol[] members) {
+		super(kind, id);
+		this.members = members;
 	}
 	
 	override void accept(Visitor v) {
@@ -113,8 +120,9 @@ class SymbolTable {
 	
 	/// get the symbol.
 	/// Returns: null if the name has not been declared.
-	Symbol get(string name) {
+	Symbol opIndex(string name) {
 		auto p = name in dictionary;
 		return p ? *p : null;
 	}
+	
 }

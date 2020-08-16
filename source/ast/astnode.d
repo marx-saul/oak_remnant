@@ -1,6 +1,6 @@
-module astnode;
+module ast.astnode;
 
-import visitor;
+import visitor.visitor;
 
 /// ASTNode class, the root object of every AST node.
 abstract class ASTNode {

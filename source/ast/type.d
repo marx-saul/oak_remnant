@@ -1,11 +1,11 @@
-module type;
+module ast.type;
 
 import message;
 import token;
-import astnode;
-import symbol;
-import visitor;
-import semantic;
+import ast.astnode;
+import ast.symbol;
+import visitor.visitor;
+import semantic.semantic;
 
 enum TPKind {
 	error,
@@ -252,7 +252,13 @@ final class TupleType : Type {
 }
 
 class SymbolType : Type {
-	Symbol sym;				 // corresponding symbol
+	Identifier[] ids;			// identifiers
+	Symbol sym;					// corresponding symbol
+	
+	this (TPKind kind, Identifier[] ids) {
+		super(kind);
+		this.ids = ids;
+	}
 	
 	this (TPKind kind, Symbol sym) {
 		super(kind);
@@ -270,7 +276,7 @@ class SymbolType : Type {
 
 /// An identifier type defined by typedef
 final class TypedefType : SymbolType {
-	import declaration: TypedefDeclaration;
+	import ast.declaration: TypedefDeclaration;
 	/// return the TypedefDeclaration of this symbol
 	TypedefDeclaration td() @property {
 		return cast(TypedefDeclaration) sym;
@@ -346,7 +352,7 @@ final class TypedefType : SymbolType {
 }
 
 final class StructType : SymbolType {
-	import struct_;
+	import ast.struct_;
 	StructDeclaration sd;
 	
 	this (Symbol sym) {

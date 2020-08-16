@@ -1,11 +1,11 @@
-module template_;
+module ast.template_;
 
 import token;
-import astnode;
-import symbol;
-import expression;
-import type;
-import visitor;
+import ast.astnode;
+import ast.symbol;
+import ast.expression;
+import ast.type;
+import visitor.visitor;
 
 final class TemplateInstance : Symbol {
 	Token[][] params;

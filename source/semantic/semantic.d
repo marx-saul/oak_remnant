@@ -1,8 +1,8 @@
-module semantic;
+module semantic.semantic;
 
 import token: Location;
-import ast: ASTNode;
-import visitor;
+import ast.ast: ASTNode;
+import visitor.visitor;
 
 enum PASS {
 	none,

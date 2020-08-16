@@ -1,9 +1,9 @@
-module aggregate;
+module ast.aggregate;
 
 import token;
-import ast;
-import visitor;
-import scope_;
+import ast.ast;
+import visitor.visitor;
+import semantic.scope_;
 
 /**
  * Fields of the aggregate type. 
@@ -21,19 +21,12 @@ class Fields {
 		return true;
 	}
 	
-	/// Get the type of the 
-	Type getType(string mem) {
-		auto p = mem in tp_set;
+	/// Get the type of the designated field
+	Type getType(string name) {
+		auto p = name in tp_set;
 		if (!p) return *p;
 		else return null;
 	}
-}
-
-enum AGG {
-	struct_,
-	union_, 
-	class_,
-	interface_,
 }
 
 /**
@@ -41,20 +34,17 @@ enum AGG {
  * struct, union, class, interface
  */
 abstract class AggregateDeclaration : ScopeSymbol {
-	AGG kind;
 	Location loc;
 	
-	/// declarations of symbols
-	ASTNode[] decls;
 	/// fields extracted from `decls`
 	Fields fields;
 	
 	TPSIZE structSize;
 	TPSIZE unionSize;
 	
-	this (SYMKind kind, Identifier id, ASTNode[] decls) {
-		super(kind, id);
-		this.decls = decls;
+	this (SYMKind kind, Identifier id, Symbol[] members) {
+		super(kind, id, members);
+		// currently
 		this.fields = new Fields;
 	}
 	

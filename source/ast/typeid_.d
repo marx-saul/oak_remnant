@@ -1,10 +1,10 @@
-module typeid_;
+module ast.typeid_;
 
 import token;
-import astnode;
-import expression;
-import type;
-import visitor;
+import ast.astnode;
+import ast.expression;
+import ast.type;
+import visitor.visitor;
 
 final class Typeid : ASTNode {
 	Location loc;
