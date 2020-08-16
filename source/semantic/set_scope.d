@@ -40,11 +40,11 @@ class SetScopeVisitor : PermissiveVisitor {
 	}
 	
 	override void visit(Symbol sym) {
-		log("SetScopeVisitor.visit(Symbol) ", typeid(sym), " ", sym.id.name);
+		semlog("SetScopeVisitor.visit(Symbol) ", typeid(sym), " ", sym.id.name);
 		sym.semsc = enclosing;
 	}
 	override void visit(FuncDeclaration fd) {
-		log("SetScopeVisitor.visit(FuncDeclaration) ", typeid(fd), " ", fd.id.name);
+		semlog("SetScopeVisitor.visit(FuncDeclaration) ", typeid(fd), " ", fd.id.name);
 		auto fsc = new Scope(fd);
 		fsc.func = fd;
 		fsc.module_ = this.root_mod;
@@ -68,7 +68,7 @@ class SetScopeVisitor : PermissiveVisitor {
 	
 	// scope symbol
 	override void visit(ScopeSymbol scopesym) {
-		log("SetScopeVisitor.visit(ScopeSymbol) ", typeid(scopesym), " ", scopesym.id.name);
+		semlog("SetScopeVisitor.visit(ScopeSymbol) ", typeid(scopesym), " ", scopesym.id.name);
 		// create a new scope
 		auto sc = new Scope(scopesym);
 		sc.scsym = scopesym;

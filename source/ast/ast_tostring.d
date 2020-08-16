@@ -9,7 +9,19 @@ module ast.ast_tostring;
 
 import token, lexer, ast.ast, visitor.visitor;
 
-/* ************** To String ************** */
+/**
+ * Recover the source code from AST.
+ */
+string to_string(ASTNode node) {
+	if (node is null) return "";
+	auto vis = new ToStringVisitor;
+	node.accept(vis);
+	return vis.result;
+}
+
+/**
+ * The visitor that turns AST into string 
+ */
 final class ToStringVisitor : Visitor {
 	string result;		/// the result is stored here
 	//private depth;		/// depth of { }
@@ -441,11 +453,4 @@ final class ToStringVisitor : Visitor {
 	override void visit(Typeid t) {
 		result ~= "Typeid";
 	}
-}
-
-string to_string(ASTNode node) {
-	if (node is null) return "";
-	auto vis = new ToStringVisitor;
-	node.accept(vis);
-	return vis.result;
 }

@@ -39,9 +39,8 @@ private void show_message(string[] msgs...) {
 
 /**
  * Display currently called function for debugging.
- *
  */
-void log(T...)(T args) {
+void semlog(T...)(T args) {
 	if (leave_log) writeln(args);
 }
-private immutable leave_log = true; // currently
+private auto leave_log = true; // currently

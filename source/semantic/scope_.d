@@ -1,5 +1,6 @@
 module semantic.scope_;
 
+import message;
 import ast.ast;
 
 enum SCKind {
@@ -31,10 +32,15 @@ final class Scope {
 	
 	/// search for an identifier
 	/// Returns: null if not found, symbol if found
-	Symbol search(Identifier id) inout const {
+	inout(Symbol) search(string name) inout const {
 		auto sc = cast(Scope)this;
 		while (sc) {
 			assert(sc !is sc.enclosing);
+			assert(scsym);
+			semlog("Searching for ", name, " in ", scsym.recoverString());
+			if (auto sym = scsym.hasMember(name))
+				return sym;
+			
 			sc = sc.enclosing;
 		}
 		return null;

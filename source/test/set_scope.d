@@ -52,8 +52,22 @@ unittest {
 			writeln app add (vector3 3.2 4.8 --1.2) ((vector3 0.8 1.5 2.3));
 		}
 		`);
+		
 		auto mod = parser.parse();
+		
+		// set scope
 		setScope(mod);
+		writeln();
+		
+		// searching test
+		assert(mod.semsc);
+		auto sym = mod.semsc.search("MyStr");
+		if (sym is null) {
+			writeln("NOT FOUND");
+		}
+		else {
+			sym.to_string().writeln();
+		}
 	}
 	
 }

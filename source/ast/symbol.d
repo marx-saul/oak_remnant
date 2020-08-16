@@ -4,6 +4,7 @@
  */
 module ast.symbol;
 
+import message;
 import token;
 import ast.ast;
 import semantic.scope_;
@@ -32,6 +33,12 @@ enum SYMKind {
 	instance,			/// T!(...)
 	module_,			/// modules
 	package_,			/// packages
+	
+	mixin_,
+	template_mixin,
+	staticif,
+	version_,
+	debug_,
 }
 
 /// Symbol class
@@ -66,17 +73,17 @@ class Symbol : ASTNode {
 	}
 	
 	// enclosing scope of this symbol
-	final Scope enclosing() @property {
+	final inout(Scope) enclosing() inout const @property {
 		with (SYMKind)
 		switch (kind) {
 			case unsolved:
 			case var:
 			case arg:
 			case typedef:
-				return semsc;
+				return cast(inout) semsc;
 			default:
 				assert(semsc);
-				return semsc.enclosing;
+				return cast(inout) semsc.enclosing;
 		}
 	}
 	
@@ -94,6 +101,43 @@ class ScopeSymbol : Symbol {
 	this (SYMKind kind, Identifier id, Symbol[] members) {
 		super(kind, id);
 		this.members = members;
+		this.table = new SymbolTable;
+		setSymbols(members);
+	}
+	
+	private void setSymbols(Symbol[] mems) {
+		import std: among, to;
+		foreach (mem; mems) {
+			/*
+			 * ignore declarations of the form
+			 * mixin(...)
+			 * mixin Foo!(...)
+			 * static if {...} else {...}
+			 * version(...) {...}
+			 * debug(...) {...}
+			 */
+			with (SYMKind)
+			if (!mem || mem.kind.among!(mixin_, template_mixin, staticif, version_, debug_,)) continue;
+			
+			// add a symbol
+			auto flag = table.add(mem);
+			// same identifier appeared multiple time
+			if (!flag) {
+				auto sym = table[mem.id.name];
+				assert(sym);
+				message.error(mem.loc, "identifier \x1b[46m", mem.id.name, "\x1b[0m has already been declared in line:",
+					sym.id.loc.line_num.to!string, ", index:", sym.id.loc.index_num.to!string, ".");
+			}
+		}
+	}
+	
+	/**
+	 * Search for the symbol declared in this scope.
+	 * Returns:
+	 *     the symbol if declared, null if not.
+	 */
+	inout(Symbol) hasMember(string name) inout const {
+		return table[name];
 	}
 	
 	override void accept(Visitor v) {
@@ -120,9 +164,9 @@ class SymbolTable {
 	
 	/// get the symbol.
 	/// Returns: null if the name has not been declared.
-	Symbol opIndex(string name) {
+	inout(Symbol) opIndex(string name) inout const {
 		auto p = name in dictionary;
-		return p ? *p : null;
+		return cast(inout) (p ? *p : null);
 	}
 	
 }

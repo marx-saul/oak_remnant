@@ -65,6 +65,18 @@ class FuncDeclaration : ScopeSymbol {
 	}
 	private Type _thisType;	 // remember the type
 	
+	/// search for an identifier, arguments and symbol declared in the function body
+	override inout(Symbol) hasMember(string name) inout const {
+		// currently do not look into the function body
+	
+		// arguments
+		if (auto arg = args_table[name]) return arg;
+		// function body
+		//else if 
+		// not found
+		else return null;
+	}
+	
 	override void accept(Visitor v) {
 		v.visit(this);
 	}
