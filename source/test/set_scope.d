@@ -57,17 +57,31 @@ unittest {
 		
 		// set scope
 		setScope(mod);
+		assert(mod.semsc);
 		writeln();
 		
 		// searching test
-		assert(mod.semsc);
-		auto sym = mod.semsc.search("MyStr");
-		if (sym is null) {
-			writeln("NOT FOUND");
+		{
+			auto sym = mod.semsc.search("MyStr");
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
 		}
-		else {
-			sym.to_string().writeln();
+		{
+			auto sym = mod.semsc.access(["MyStr", "Inner", "InnerInner"]);
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
 		}
+		
 	}
 	
 }

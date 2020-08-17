@@ -21,24 +21,25 @@ struct Identifier {
 /// Kind of symbols
 enum SYMKind {
 	unsolved,			/// unsolved symbol
-	var,				/// variables : defined by `let x:T = E;`
-	arg,				/// function argument
-	func,				/// function : defined by `func f ...`
-	typedef,			/// typedef-ed type : defined by typedef T = S;
-	struct_,			/// struct : defined by struct S { ... }
-	union_,
-	class_,
-	interface_,
+	var,				/// variables : defined by `let x:T = E;`			correspond to ast.declaration.LetDeclaration
+	arg,				/// function argument								correspond to ast.declaration.FuncArgument
+	func,				/// function : defined by `func f ...`				correspond to ast.declaration.FuncDeclaration
+	typedef,			/// typedef-ed type : defined by typedef T = S;		correspond to ast.declaration.TypedefDeclaration
+	struct_,			/// struct : defined by struct S { ... }			correspond to ast.struct_.StructDeclaration
+	union_,				/// union : defined by union U { ... }
+	class_,				/// class : defined by class C { ... }
+	interface_,			/// interface : defined by interface I { ... }
 	template_,			/// template : defined by template T { ... }
-	instance,			/// T!(...)
+	instance,			/// template instance : T!(...)
 	module_,			/// modules
 	package_,			/// packages
-	
-	mixin_,
-	template_mixin,
-	staticif,
-	version_,
-	debug_,
+	ctor,				/// constructor : defined by this ...
+	dector,				/// deconstructor : defined by ~this ...
+	mixin_,				/// mixin declaration : defined by mixin( ... );
+	template_mixin,		/// template mixin declaration : defined by mixin Foo!(...)
+	staticif,			/// static if declaration : defined by static if { ... } else { ... }
+	version_,			/// version declaration : defined by version(...) { ... }
+	debug_,				/// debug declaration : defined by debug(...) { ... }
 }
 
 /// Symbol class
@@ -49,7 +50,6 @@ class Symbol : ASTNode {
 	
 	PASS pass = PASS.init;							/// semantic pass that is currently run on this symbol
 	Scope semsc;									/// the scope this symbol belongs to or this symbol generates(when it is a scope-symbol)
-	Symbol parent;									/// parent symbol.
 	
 	this (SYMKind kind, Identifier id) {
 		this.kind = kind, this.id = id;
@@ -58,6 +58,7 @@ class Symbol : ASTNode {
 		this(kind, Identifier(name, loc));
 	}
 	
+	/// Get the full string of this symbol.
 	final string recoverString() inout const {
 		auto sym = cast(Symbol) this;
 		string result;
@@ -72,18 +73,85 @@ class Symbol : ASTNode {
 		return result;
 	}
 	
-	// enclosing scope of this symbol
+	/// enclosing scope of this symbol
+	/// must call setScope() before calling this
 	final inout(Scope) enclosing() inout const @property {
+		assert(semsc);
+		/*
+		if (!semsc) {
+			import semantic.set_scope;
+			setScope(this);
+		}
+		*/
 		with (SYMKind)
-		switch (kind) {
+		final switch (kind) {
+			// not scope-symbols
 			case unsolved:
 			case var:
 			case arg:
 			case typedef:
+			case mixin_:
+			case template_mixin:
+			case staticif:
+			case version_:
+			case debug_:
 				return cast(inout) semsc;
-			default:
+			// scope-symbols
+			case func:
+			case struct_:
+			case union_:
+			case class_:
+			case interface_:
+			case template_:
+			case instance:
+			case module_:
+			case package_:
+			case ctor:
+			case dector:
 				assert(semsc);
 				return cast(inout) semsc.enclosing;
+		}
+	}
+	
+	/// Returns lexical parent symbol
+	final inout(Symbol) parent() inout const @property {
+		if (auto enc = this.enclosing()) return enc.scsym;
+		else return null;
+	}
+	
+	// Returns the symbol 
+	//final inout(Symbol) parent2() inout const @property {
+		
+	//}
+	final inout const @nogc @property {
+		inout(FuncArgument)				isFuncArgument()			{ return kind == SYMKind.arg 		? cast(inout(typeof(return)))this : null; }
+		inout(FuncDeclaration)			isFuncDeclaration()			{ return kind == SYMKind.func 		? cast(inout(typeof(return)))this : null; }
+		inout(TypedefDeclaration)		isTypedefDeclaration()		{ return kind == SYMKind.typedef 	? cast(inout(typeof(return)))this : null; }
+		inout(StructDeclaration)		isStructDeclaration()		{ return kind == SYMKind.struct_	? cast(inout(typeof(return)))this : null; }
+		//inout(UnionDeclaration)			isUnionDeclaration()		{ return kind == SYMKind.union_		? cast(inout(typeof(return)))this : null; }
+		//inout(ClassDeclaration)			isClassDeclaration()		{ return kind == SYMKind.class_		? cast(inout(typeof(return)))this : null; }
+		//inout(InterfaceDeclaration)		isInterfaceDeclaration()	{ return kind == SYMKind.interface_	? cast(inout(typeof(return)))this : null; }inout(StructDeclaration)		isStructDeclaration()		{ return kind == SYMKind.struct_	? cast(inout StructDeclaration)this : null; }
+		inout(TemplateDeclaration)		isTemplateDeclaration()		{ return kind == SYMKind.struct_	? cast(inout(typeof(return)))this : null; }
+		inout(TemplateInstance)			isTemplateInstance()		{ return kind == SYMKind.struct_	? cast(inout(typeof(return)))this : null; }
+		inout(Module)					isModule()					{ return kind == SYMKind.module_	? cast(inout(typeof(return)))this : null; }
+		inout(Package)					isPackage()					{ return kind == SYMKind.package_	? cast(inout(typeof(return)))this : null; }
+		
+		inout(ScopeSymbol)				isScopeSymbol()				{
+			import std.algorithm: among;
+			with (SYMKind)
+			return kind.among!(
+				func,
+				struct_,
+				union_,
+				class_,
+				interface_,
+				template_,
+				instance,
+				module_,
+				package_,
+				ctor,
+				dector,
+			) != 0 ? cast(inout(typeof(return)))this : null;
 		}
 	}
 	
@@ -110,6 +178,8 @@ class ScopeSymbol : Symbol {
 		foreach (mem; mems) {
 			/*
 			 * ignore declarations of the form
+			 * this ... { ... }
+			 * ~this ... { ... }
 			 * mixin(...)
 			 * mixin Foo!(...)
 			 * static if {...} else {...}
@@ -117,7 +187,7 @@ class ScopeSymbol : Symbol {
 			 * debug(...) {...}
 			 */
 			with (SYMKind)
-			if (!mem || mem.kind.among!(mixin_, template_mixin, staticif, version_, debug_,)) continue;
+			if (!mem || mem.kind.among!(ctor, dector, mixin_, template_mixin, staticif, version_, debug_,)) continue;
 			
 			// add a symbol
 			auto flag = table.add(mem);
