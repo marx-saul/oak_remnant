@@ -18,6 +18,15 @@ struct Identifier {
 	bool is_global;		/// true iff the identifier is accessed globally (i.e. _.foo)
 }
 
+/// access level
+enum ACCLV {
+	private_,
+	package_,
+	protected_,
+	public_,
+	export_,
+}
+
 /// Kind of symbols
 enum SYMKind {
 	unsolved,			/// unsolved symbol
@@ -25,6 +34,7 @@ enum SYMKind {
 	arg,				/// function argument								correspond to ast.declaration.FuncArgument
 	func,				/// function : defined by `func f ...`				correspond to ast.declaration.FuncDeclaration
 	typedef,			/// typedef-ed type : defined by typedef T = S;		correspond to ast.declaration.TypedefDeclaration
+	import_,			/// import declarations : import foo.bar.baz. ... ;	correspond to ast.declaration.ImportDeclaration
 	struct_,			/// struct : defined by struct S { ... }			correspond to ast.struct_.StructDeclaration
 	union_,				/// union : defined by union U { ... }
 	class_,				/// class : defined by class C { ... }
@@ -48,7 +58,7 @@ class Symbol : ASTNode {
 	Identifier id;									/// identifier
 	Location loc() @property { return id.loc; }		/// location
 	
-	PASS pass = PASS.init;							/// semantic pass that is currently run on this symbol
+	PASS1 pass1 = PASS1.init;							/// semantic pass that is currently run on this symbol
 	Scope semsc;									/// the scope this symbol belongs to or this symbol generates(when it is a scope-symbol)
 	
 	this (SYMKind kind, Identifier id) {
@@ -90,6 +100,7 @@ class Symbol : ASTNode {
 			case var:
 			case arg:
 			case typedef:
+			case import_:
 			case mixin_:
 			case template_mixin:
 			case staticif:
@@ -127,6 +138,7 @@ class Symbol : ASTNode {
 		inout(FuncArgument)				isFuncArgument()			{ return kind == SYMKind.arg 		? cast(inout(typeof(return)))this : null; }
 		inout(FuncDeclaration)			isFuncDeclaration()			{ return kind == SYMKind.func 		? cast(inout(typeof(return)))this : null; }
 		inout(TypedefDeclaration)		isTypedefDeclaration()		{ return kind == SYMKind.typedef 	? cast(inout(typeof(return)))this : null; }
+		inout(ImportDeclaration)		isImportDeclaration()		{ return kind == SYMKind.import_ 	? cast(inout(typeof(return)))this : null; }
 		inout(StructDeclaration)		isStructDeclaration()		{ return kind == SYMKind.struct_	? cast(inout(typeof(return)))this : null; }
 		//inout(UnionDeclaration)			isUnionDeclaration()		{ return kind == SYMKind.union_		? cast(inout(typeof(return)))this : null; }
 		//inout(ClassDeclaration)			isClassDeclaration()		{ return kind == SYMKind.class_		? cast(inout(typeof(return)))this : null; }
@@ -170,9 +182,12 @@ class ScopeSymbol : Symbol {
 		super(kind, id);
 		this.members = members;
 		this.table = new SymbolTable;
-		setSymbols(members);
+		
+		// currently
+		//setSymbols(members);
 	}
 	
+	/+// currently
 	private void setSymbols(Symbol[] mems) {
 		import std: among, to;
 		foreach (mem; mems) {
@@ -200,11 +215,11 @@ class ScopeSymbol : Symbol {
 			}
 		}
 	}
-	
+	+/
 	/**
-	 * Search for the symbol declared in this scope.
+	 * Search for the symbol as a member of this symbol.
 	 * Returns:
-	 *     the symbol if declared, null if not.
+	 *     the symbol if the identifier is a member, null if not.
 	 */
 	inout(Symbol) hasMember(string name) inout const {
 		return table[name];
@@ -221,6 +236,7 @@ class SymbolTable {
 	/// store all identifiers and their declarations
 	private Symbol[string] dictionary;
 	
+	/+
 	/// add a symbol.
 	/// Returns: false iff the name collides.
 	bool add(Symbol sym) {
@@ -231,12 +247,23 @@ class SymbolTable {
 		dictionary[sym.id.name] = sym;
 		return true;
 	}
+	+/
 	
-	/// get the symbol.
-	/// Returns: null if the name has not been declared.
+	/**
+	 * Get the symbol.
+	 * Returns: null if the name has not been declared.
+	 */
 	inout(Symbol) opIndex(string name) inout const {
 		auto p = name in dictionary;
 		return cast(inout) (p ? *p : null);
 	}
 	
+	/**
+	 * Regisiter the symbol with the string indicated.
+	 * Multiple registration are considered to be bugs.
+	 */
+	ref Symbol opIndexAssign(Symbol sym, string name) {
+		assert(sym && !this.opIndex(name));
+		return dictionary[name] = sym;
+	}
 }

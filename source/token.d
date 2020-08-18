@@ -11,6 +11,11 @@ struct Location {
     size_t line_num;
     size_t index_num;
     string path;
+	
+	string toString() {
+		import std.conv: to;
+		return "\x1b[1m" ~ path ~ "(" ~ line_num.to!string ~ ":" ~ index_num.to!string ~ ")\x1b[0m";
+	}
 }
 
 /**

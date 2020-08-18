@@ -52,10 +52,10 @@ final class Parser(Range) : Lexer!Range {
 	//	Module:
 	//		ModuleDeclaration_opt ModuleBodies
 	//	ModuleDeclaration:
-	//		ModuleIdentifiers ;
-	//	ModuleIdentifiers:
+	//		module ModuleName ;
+	//	ModuleName:
 	//		identifier
-	//		identifier . ModuleIdentifiers
+	//		identifier . ModuleName
 	//	ModuleBodies:
 	//		ModuleBody ModuleBodies
 	//		ModuleBody
@@ -63,34 +63,49 @@ final class Parser(Range) : Lexer!Range {
 	//		Declaration
 	Module parseModule() {
 		auto loc = token.loc;
+		
 		string[] modname;
 		if (token.kind == TokenKind.module_) {
 			nextToken();	// get rid of module
-			if (token.kind == TokenKind.identifier) {
-				modname ~= token.str;
-				nextToken();	// get rid of identifier
-			}
-			else {
-				this.error(token.loc, "An identifier was expected after \x1b[46mmodule\x1b[0m, not, \x1b[46m", token.str, "\x1b[0m");
-			}
-			while (token.kind == TokenKind.dot) {
-				nextToken();	// get rid of .
-				if (token.kind == TokenKind.identifier) {
-					modname ~= token.str;
-					nextToken();	// get rid of identifier
-				}
-				else {
-					this.error(token.loc, "An identifier was expected after \x1b[46m.\x1b[0m, not, \x1b[46m", token.str, "\x1b[0m");
-				}
+			modname = parseModuleName();
+			if (modname.length == 0) {
+				this.error(token.loc, "An identifier was expected after \x1b[46mmodule\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
 			}
 			check(TokenKind.semicolon);
 		}
+		
 		Symbol[] mems;
 		while (isFirstOfDeclaration) {
 			mems ~= parseDeclaration();
 		}
+		
 		check(TokenKind.end_of_file);
+		
 		return new Module(loc, modname, mems);
+	}
+	
+	string[] parseModuleName() {
+		string[] result;
+		
+		if (token.kind == TokenKind.identifier) {
+			result ~= token.str;
+			nextToken();
+		}
+		else {
+			return result;
+		}
+		
+		while (token.kind == TokenKind.dot) {
+			nextToken();	// get rid of .
+			if (token.kind == TokenKind.identifier) {
+				result ~= token.str;
+				nextToken();	// get rid of identifier
+			}
+			else {
+				this.error(token.loc, "An identifier was expected after \x1b[46m.\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+			}
+		}
+		return result;
 	}
 	
 	/* ************************ Expression ************************ */
@@ -1129,6 +1144,8 @@ final class Parser(Range) : Lexer!Range {
 			return parseStructDeclaration();
 		case typedef:
 			return parseTypedefDeclaration();
+		case import_:
+			return parseImportDeclaration();
 		default:
 			this.error(token.loc, "A declaration was expected, not \x1b[46m", token.str, "\x1b[0m.");
 			return null;
@@ -1142,6 +1159,7 @@ final class Parser(Range) : Lexer!Range {
 				func,
 				struct_,
 				typedef,
+				import_,
 			) != 0;
 	}
 	private bool isFirstOfDeclaration() @property {
@@ -1309,6 +1327,108 @@ final class Parser(Range) : Lexer!Range {
 		auto type = parseType();
 		check(TokenKind.semicolon);
 		return new TypedefDeclaration(id, type);
+	}
+	
+	//	Import:
+	//		import ImportBodies ,_opt ;
+	//		import (ImportBodies ,)_opt ImportBody : Identifiers ,_opt ;
+	//	ImportBodies:
+	//		identifier = ModuleName , ImportBodies
+	//		ModuleName , ImportBodies
+	//		identifier
+	//		ModuleName
+	//		BindedImports
+	//	BindedImports:
+	//		ModuleName : BindedImportsBodies
+	//	BindedImportsBodies:
+	//		BindedImportsBody , BindedImportsBodies
+	//		BindedImportsBody
+	//	BindedImportsBody:
+	//		identifier
+	//		identifier = identifier
+	ImportDeclaration parseImportDeclaration() {
+		nextToken();	// get rid of import
+		ImportDeclaration result;
+		
+		ImportDeclaration parse_one() {
+			// identifier = Modulename
+			if (lookahead(1).kind == TokenKind.ass) {
+				Identifier replace = Identifier(token.str, token.loc);
+				nextToken();	// get rid of identifier
+				nextToken();	// get rid of =
+				auto modname = parseModuleName();
+				if (modname.length == 0) {
+					this.error(token.loc, "An identifier was expected after \x1b[46mimport foo =\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+					return null;
+				}
+				return new ImportDeclaration(replace, modname, true);
+			}
+			// ModuleName
+			// BindedImports
+			else {
+				Identifier id = Identifier(token.str, token.loc);
+				auto modname = parseModuleName();
+				
+				// BindedImports
+				if (token.kind == TokenKind.colon) {
+					nextToken();	// get rid of :
+					
+					Identifier[] imports;
+					Identifier[] bindings;
+					while (token.kind == TokenKind.identifier) {
+						
+						// identifier = identifier
+						if (lookahead(1).kind == TokenKind.ass) {
+							auto binding = Identifier(token.str, token.loc);
+							nextToken();	// get rid of identifier
+							nextToken();	// get rid of =
+							if (token.kind != TokenKind.identifier) {
+								this.error(token.loc, "An identifier was expected after \x1b[46mimport foo.bar : baz = \x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+							}
+							else {
+								bindings ~= binding;
+								imports ~= Identifier(token.str, token.loc);
+								nextToken();	// get rid of identifier
+							}
+						}
+						else {
+						// identifier
+							bindings ~= Identifier.init;
+							imports ~= Identifier(token.str, token.loc);
+							nextToken();	// get rid of identifier
+						}
+						if (token.kind == TokenKind.comma) nextToken();
+					}
+					if (imports.length == 0)
+						this.error(token.loc, "An identifier was expected after \x1b[46mimport foo.bar : \x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+					return new BindedImportDeclaration(id, modname, imports, bindings);
+				}
+				else
+					return new ImportDeclaration(id, modname);
+			}
+		}
+		
+		result = parse_one();
+		if (!result) {
+			check(TokenKind.semicolon);
+			return null;
+		}
+		
+		if (token.kind == TokenKind.comma) nextToken();
+		
+		auto bottom = result;
+		while (token.kind == TokenKind.identifier) {
+			auto newimp = parse_one();
+			// link
+			if (newimp) {
+				bottom.next = newimp;
+				bottom = newimp;
+			}
+			if (token.kind == TokenKind.comma) nextToken();
+		}
+		check(TokenKind.semicolon);
+		
+		return result;
 	}
 }
 

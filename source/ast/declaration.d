@@ -2,13 +2,14 @@ module ast.declaration;
 
 import token: Location;
 import semantic.scope_;
+import ast.expression;
+import ast.module_;
+import ast.statement;
 import ast.symbol;
 import ast.type;
-import ast.expression;
-import ast.statement;
 import visitor.visitor;
 
-class FuncArgument : Symbol {
+final class FuncArgument : Symbol {
 	Type tp;				/// the argument of the type
 	FuncDeclaration fd;
 	
@@ -22,7 +23,7 @@ class FuncArgument : Symbol {
 	}
 }
 
-class FuncDeclaration : ScopeSymbol {
+final class FuncDeclaration : ScopeSymbol {
 	Type rettp;						/// return type of this function
 	FuncArgument[] args;			/// identifiers of arguments
 	BlockStatement body;			/// function body
@@ -32,14 +33,18 @@ class FuncDeclaration : ScopeSymbol {
 	this (Identifier id, Type rettp, FuncArgument[] args, BlockStatement body) {
 		super (SYMKind.func, id, []);
 		this.rettp = rettp, this.args = args, this.body = body;
-		
+		/+
 		// set argument table
 		this.args_table = new SymbolTable;
 		foreach (arg; args) {
-			assert(arg);
-			args_table.add(arg);
+			if (!args_table[arg.id.name]) {
+				message.error(arg.id.loc,
+				"Argument names collide : two or more \x1b[46m", arg.id.name, "\x1b[0m in ",
+				"already appeared in ", table[id.name].toString());
+			}
+			args_table.[arg.id.name] = arg;
 		}
-		
+		+/
 		//assert(rettp, "Auto type inference of the return type of functions are not supported yet : " ~ this.recoverString());
 	}
 	
@@ -82,7 +87,7 @@ class FuncDeclaration : ScopeSymbol {
 	}
 }
 
-class LetDeclaration : Symbol {
+final class LetDeclaration : Symbol {
 	Type tp;
 	Expression exp;
 	LetDeclaration next;	/// <Linked list> next declaration
@@ -97,7 +102,7 @@ class LetDeclaration : Symbol {
 	}
 }
 
-class TypedefDeclaration : Symbol {
+final class TypedefDeclaration : Symbol {
 	Type tp;
 	
 	this (Identifier id, Type tp) {
@@ -110,69 +115,45 @@ class TypedefDeclaration : Symbol {
 	}
 }
 
-/+
-final class LetDeclaration : Statement {
-	Location[] idlocs;
-	string[] names;
-	Type[] types;
-	Expression[] inits;
-	this (Location loc, Location[] idlocs, string[] names, Type[] types, Expression[] inits) {
-		super(loc);
-		this.idlocs = idlocs, this.names = names, this.types = types, this.inits = inits;
+// import (foo = ) bar.baz;
+class ImportDeclaration : Symbol {
+	string[] names;		/// module name
+	bool is_replaced;	/// is there `foo = ``
+	inout(BindedImportDeclaration) isBinded() inout const @property @nogc {
+		return null;
 	}
-	override void accept(Vis v) {
+	Module module_;		/// the module
+	ImportDeclaration next;		/// Linked list
+	
+	/**
+	 * Params:
+	 *     replace = the replacing identifier of this import declaration if designated, the first identifier of the module name if not
+	 *     names = the identifiers of module. foo.bar.baz <=> ["foo", "bar", "baz"]
+	 */
+	this (Identifier id, string[] names, bool is_replaced=false) {
+		super(SYMKind.import_, id);
+		this.names = names, this.is_replaced=is_replaced;
+	}
+	
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
 
-final class FuncDeclaration : Statement {
-	Location idloc;
-	string name;
-	Type ret_type;
-	Location[] arglocs;
-	string[] args;
-	Type[] argtps;
-	Statement body;
-	this (Location loc, Location idloc, string name, Type ret_type, 
-		Location[] arglocs, string[] args, Type[] argtps, Statement body) {
-		super(loc);
-		this.idloc = idloc, this.name = name, this.ret_type = ret_type,
-		this.arglocs = arglocs, this.args = args, this.argtps = argtps, this.body = body;
+// import foo.bar : baz = qux, quux, corge, ...
+final class BindedImportDeclaration : ImportDeclaration {
+	Identifier[] imports;		/// the symbols in the module	
+	Identifier[] bindings;		/// renamed identifiers of the symbols
+	override inout(BindedImportDeclaration) isBinded() inout const @property @nogc {
+		return cast(inout BindedImportDeclaration) this;
 	}
-	override void accept(Vis v) {
+	
+	this (Identifier id, string[] names, Identifier[] imports, Identifier[] bindings) {
+		super(id, names, false);
+		this.imports = imports, this.bindings = bindings;
+	}
+	
+	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
-
-class AggregateDeclaration : Statement {
-	string name;
-	ASTNode[] mems;
-	this (Location loc, string name, ASTNode[] mems) {
-		super(loc);
-		this.name = name, this.mems = mems;
-	}
-	override void accept(Vis v) {
-		v.visit(this);
-	}
-}
-final class StructDeclaration : AggregateDeclaration {
-	this (Location loc, string name, ASTNode[] mems) {
-		super(loc, name, mems);
-	}
-	override void accept(Vis v) {
-		v.visit(this);
-	}
-}
-
-final class TypedefDeclaration : Statement {
-	string name;
-	Type type;
-	this (Location loc, string name, Type type) {
-		super(loc);
-		this.name = name, this.type = type;
-	}
-	override void accept(Vis v) {
-		v.visit(this);
-	}
-}
- +/

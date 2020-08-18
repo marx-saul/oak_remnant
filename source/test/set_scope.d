@@ -1,7 +1,7 @@
 module test.set_scope;
 
 import std.stdio;
-import parser, ast.ast_tostring, semantic.set_scope;
+import parser, ast.ast_tostring, semantic.set_scope, semantic.symbolsem;
 
 unittest {
 	writeln("##### set_scope unittest #####");
@@ -59,6 +59,8 @@ unittest {
 		setScope(mod);
 		assert(mod.semsc);
 		writeln();
+		
+		symbolSem(mod);
 		
 		// searching test
 		{

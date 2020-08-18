@@ -105,6 +105,37 @@ final class ToStringVisitor : Visitor {
 		result ~= " = ";
 		if (td.tp) td.tp.accept(this);
 	}
+	override void visit(ImportDeclaration imd) {
+		result ~= "import ";
+		for (auto node = imd; node; node = node.next) {
+			assert(node !is node.next);
+			// replacement
+			if (node.is_replaced) result ~= node.id.name ~ " = ";
+			// module name
+			foreach (name; node.names) {
+				result ~= name ~ ".";
+			}
+			result.length -= 1;
+			// bindings
+			if (auto binded = node.isBinded()) {
+				result ~= " : ";
+				foreach (i; 0 .. binded.imports.length) {
+					if (binded.bindings[i].name.length > 0) {
+						result ~= binded.bindings[i].name ~ "=";
+					}
+					result ~= binded.imports[i].name ~ ", ";
+				}
+				result.length -= 2;
+				assert(!binded.next);
+			}
+			result ~= ", ";
+		}
+		result.length -= 2;
+		result ~= ";";
+	}
+	override void visit(BindedImportDeclaration bimd) {
+		visit(cast(ImportDeclaration) bimd);
+	}
 	
 	/* expression.d */
 	override void visit(Expression exp) { assert(0); }

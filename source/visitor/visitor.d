@@ -15,6 +15,8 @@ abstract class Visitor {
 	void visit(FuncDeclaration);
 	void visit(LetDeclaration);
 	void visit(TypedefDeclaration);
+	void visit(ImportDeclaration);
+	void visit(BindedImportDeclaration);
 
     /* expression.d */
     void visit(Expression);

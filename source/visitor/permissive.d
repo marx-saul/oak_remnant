@@ -1,6 +1,6 @@
 /**
  * visitor/permissive.d
- * defines PermissiveVisitor that do not forces one to implement all visit method
+ * Defines PermissiveVisitor that do not forces one to implement all visit method.
  */
 module visitor.permissive;
 
@@ -19,6 +19,8 @@ class PermissiveVisitor : Visitor {
 	override void visit(FuncDeclaration) {}
 	override void visit(LetDeclaration) {}
 	override void visit(TypedefDeclaration) {}
+	override void visit(ImportDeclaration) {}
+	override void visit(BindedImportDeclaration) {}
 
     /* expression.d */
     override void visit(Expression) {}

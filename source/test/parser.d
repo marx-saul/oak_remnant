@@ -39,6 +39,8 @@ unittest {
 		auto parser = new Parser!string(`
 		module main;
 		
+		import std.stdio, myfoo = foo.bar.baz.qux, quux.xyzzy : corge = grault, garply;
+		
 		func main {
 			writeln app add (vector3 3.2 4.8 --1.2) ((vector3 0.8 1.5 2.3));
 		}

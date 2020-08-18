@@ -4,10 +4,8 @@ import token: Location;
 import ast.ast: ASTNode;
 import visitor.visitor;
 
-enum PASS {
-	none,
-	//context,
-	//contextdone,
-	semantic,
-	semanticdone,
+enum PASS1 {
+	init,			/// semantic pass has not been called
+	inprocess,		/// in process
+	done,			/// semantic pass is done
 }

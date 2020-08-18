@@ -19,8 +19,6 @@ enum SCP : ulong {
 final class Scope {
 	Scope enclosing;					/// Lexically enclosing scope
 	ScopeSymbol scsym;					/// corresponding scope-symbol
-	Module module_;						/// the module we are in
-	FuncDeclaration func;				/// the function declaration we are in
 	
 	this (Scope enclosing, ScopeSymbol scsym) {
 		this.enclosing = enclosing;
@@ -30,8 +28,41 @@ final class Scope {
 		this.scsym = scsym;
 	}
 	
-	/// Search for an identifier, going up the scopes and symbol declaration
-	/// Returns: null if not found, symbol if found
+	/// Get the root module
+	inout(Module) rootModule() inout const @property {
+		if (_rootModule)
+			return cast(inout) _rootModule;
+		// go up the scope until reaching the module scope
+		auto sc = cast(Scope) this;
+		while (sc && sc.scsym) {
+			sc = sc.enclosing;
+			if (auto mod = scsym.isModule())
+				return cast(inout) (cast(Module)_rootModule = cast(Module) mod);
+		}
+		return null;
+	}
+	private Module _rootModule;
+	
+	/// Get the root module
+	inout(FuncDeclaration) func() inout const @property {
+		if (_func)
+			return cast(inout) _func;
+		// go up the scope until reaching the func scope
+		auto sc = cast(Scope) this;
+		while (sc && sc.scsym) {
+			sc = sc.enclosing;
+			if (auto fd = scsym.isFuncDeclaration())
+				return cast(inout) (cast(FuncDeclaration) _func = cast(FuncDeclaration) fd);
+		}
+		return null;
+	}
+	private FuncDeclaration _func;
+	
+	
+	/**
+	 * Search for an identifier, starting from this scope, going up the scopes and symbol declaration
+	 * Returns: null if not found, symbol if found
+	 */
 	inout(Symbol) search(string name) inout const {
 		semlog("Scope.search(string) search for ", name, " in ", scsym.recoverString());
 		auto sc = cast(Scope)this;
@@ -47,7 +78,8 @@ final class Scope {
 	}
 	
 	/**
-	 * Access the symbol `foo.bar.baz` from the current scope
+	 * Access the symbol `foo.bar.baz` from the current scope.
+	 * Do not go out of the root module to resolve symbol (that is done in lookup(string[])).
 	 * Params:
 	 *     names = the symbol of the form foo.bar.baz
 	 */
