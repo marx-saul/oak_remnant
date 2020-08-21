@@ -12,8 +12,8 @@ import std.algorithm: among;
  * but do not look inside function body.
  */
 void symbolSem(ScopeSymbol sym) {
-	if (!sym || sym.pass1 == PASS1.done) { return; }
-	auto ssv = new SymbolSemVisitor;
+	if (!sym || sym.pass1 == PASS1.done) { return; }	
+	scope ssv = new SymbolSemVisitor;
 	sym.accept(ssv);
 }
 
@@ -22,7 +22,11 @@ void symbolSem(ScopeSymbol sym) {
 final class SymbolSemVisitor : GeneralVisitor {
 	alias visit = GeneralVisitor.visit;
 	
-	private SymbolTable table;		/// table to push symbols in
+	private ScopeSymbol scopesym;
+	/// table to push symbols in
+	private SymbolTable table() @property {
+		return scopesym ? scopesym.table : null;
+	}
 	
 	private void register(Identifier id, Symbol sym) {
 		assert(table);
@@ -45,7 +49,6 @@ final class SymbolSemVisitor : GeneralVisitor {
 		
 		register(sym.id, sym);
 		
-		
 		sym.pass1 = PASS1.done;
 	}
 	
@@ -62,8 +65,8 @@ final class SymbolSemVisitor : GeneralVisitor {
 		visit(cast(Symbol) sym);	// push this symbol
 		sym.pass1 = PASS1.inprocess;
 		
-		auto tmp_table = table;		// save
-		table = sym.table;			// one step deeper
+		const tmp_scopesym = scopesym;		// save
+		scopesym = sym;			// one step deeper
 		
 		bool need_redo = false;		// whether there is any of mixin, static if-else, template mixin, version, debug, declaration
 		// push members to the symbol table
@@ -86,11 +89,16 @@ final class SymbolSemVisitor : GeneralVisitor {
 			
 		}
 		
-		table = tmp_table;			// recover
+		scopesym = cast(ScopeSymbol)tmp_scopesym;			// recover
 	}
 	
 	// do not look inside function body
 	override void visit(FuncDeclaration sym) {
+		// set function arguments
+		//foreach (arg; sym.args) {
+		//	assert(arg);
+		//	sym.args_table[arg.id.name] = arg;
+		//}
 		visit(cast(Symbol) sym);
 	}
 	
@@ -122,8 +130,15 @@ final class SymbolSemVisitor : GeneralVisitor {
 				break;
 			}
 			// not binded
-			else {
+			// import foo = bar.baz;
+			if (node.is_replaced)
 				visit(cast(Symbol) node);
+			// import foo.bar.baz
+			else {
+				scopesym.import_tree.push(node);
+				if (auto sym = scopesym.table[node.id.name]) {
+					if (!sym.isImportDeclaration) visit(cast(Symbol) node);	// to yield error message
+				}
 			}
 		}
 		
@@ -135,7 +150,8 @@ final class SymbolSemVisitor : GeneralVisitor {
 		semlog("SymbolSemVisitor.visit(BindedImportDeclaration) ", bimd.id.name);
 		
 		foreach (i; 0 .. bimd.imports.length) {
-			//if (bimd.bindings[i].length > 0)
+			if (bimd.bindings[i].name.length > 0) register(bimd.bindings[i], bimd);
+			else register(bimd.imports[i], bimd);
 		}
 		
 		bimd.pass1 = PASS1.done;

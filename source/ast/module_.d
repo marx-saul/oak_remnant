@@ -5,25 +5,55 @@ import ast.astnode;
 import ast.symbol;
 import visitor.visitor;
 
-final class Module : ScopeSymbol {
+/// "/foo/bar/baz.oak -> baz"
+pure string getFileName(string path) {
+	string result;
+	string extended;
+	foreach_reverse (ch; path) {
+		if (ch == '/') break;
+		extended = ch ~ extended;
+	}
+	foreach (ch; extended) {
+		if (ch == '.') break;
+		result ~= ch;
+	}
+	return result;
+}
+
+class Package : ScopeSymbol {
+	Package parent;		// parent package
+	
+	this (Location loc, string name, Symbol[] members) {
+		super(SYMKind.package_, Identifier(name, loc), members);
+	}
+	
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class Module : Package {
 	string[] names;					/// full name of this module
-	Package parent;					/// parent package
-	SymbolTable symbols;			/// symbol table of declared symbols
 	bool syntax_error = false;		/// does this module contain any syntax errors
-    
+	string path;					/// path to this file "/.../pack/mod.oak"
+    bool is_package = false;		/// is this module /.../package.oak
+	
 	/**
 	 * Params:
 	 *     loc : Location of the top module token
 	 *     names : ["aaa", "bbb", "ccc"] of module aaa.bbb.ccc;
-	 *     decls : declared symbols
+	 *     members : declared symbols
 	 */
 	this (Location loc, string[] names, Symbol[] members) {
-		if (names.length > 0)
-			super(SYMKind.module_, Identifier(names[$-1], loc), members);
-        else
+		if (names.length > 0) {
+			super(loc, names[$-1], members);
+		}
+        else {
 			// currently.
-			super(SYMKind.module_, Identifier(loc.path, loc), members);
+			super(loc, getFileName(loc.path), members);
+		}
         
+		this.kind = SYMKind.module_;
 		this.names = names;
 	}
     /**
@@ -38,19 +68,6 @@ final class Module : ScopeSymbol {
 		auto result = parser.parseModule();
 		result.syntax_error = parser.is_error;
 		return result;
-	}
-	
-	override void accept(Visitor v) {
-		v.visit(this);
-	}
-}
-
-final class Package : ScopeSymbol {
-	Package parent;		// parent package
-	SymbolTable children;	// symbol table of descendant modules and packages 
-	
-	this (Location loc, string name, Symbol[] members) {
-		super(SYMKind.package_, Identifier(name, loc), members);
 	}
 	
 	override void accept(Visitor v) {

@@ -6,6 +6,7 @@ import ast.astnode;
 import ast.symbol;
 import visitor.visitor;
 import semantic.semantic;
+import std.algorithm: among;
 
 enum TPKind {
 	error,
@@ -54,7 +55,7 @@ TPKind toTPKind(TokenKind x) {
 			assert(0, token_dictionary[x]);
 	}
 }
-
+/+
 alias TPSIZE = int;
 enum TPSIZEInvalid = -1;
 
@@ -63,12 +64,11 @@ enum Sizeok {
 	inprocess,				/// size is being calculated 
 	done,					/// size has been calculated
 }
-
++/
 abstract class Type : ASTNode {
 	TPKind kind;			/// Kind of the type.
 	bool parenthesized;		/// is this type parenthesized
-
-	Sizeok sizeok;			/// Cycle detection of the size
+	Type resolved;			/// typedef type removed form. see also semantic/typedef.d
 	
 	/**
 	 */
@@ -76,10 +76,40 @@ abstract class Type : ASTNode {
 		this.kind = kind;
 	}
 	
-	/**
-	 * Return the bytes of the values of type.
-	 */
-	TPSIZE size() @property;
+	final inout const @nogc @property {
+		inout(ErrorType)				isErrorType()			{ return kind == TPKind.error 		? cast(inout(typeof(return)))this : null; }
+		inout(BuiltInType)				isBuiltInType()			{
+			with (TPKind)
+			return kind.among!(
+				int32,
+				uint32,
+				int64,
+				uint64,
+				real32,
+				real64,
+				unit,
+				bool_,
+				string_,
+				char_,
+			) ? cast(inout(typeof(return)))this : null;
+		}
+		inout(FuncType)					isFuncType()			{ return kind == TPKind.func 		? cast(inout(typeof(return)))this : null; }
+		inout(LazyType)					isLazyType()			{ return kind == TPKind.lazy_ 		? cast(inout(typeof(return)))this : null; }
+		inout(PtrType)					isPtrType()				{ return kind == TPKind.ptr 		? cast(inout(typeof(return)))this : null; }
+		inout(ArrayType)				isArrayType()			{ return kind == TPKind.array 		? cast(inout(typeof(return)))this : null; }
+		inout(AArrayType)				isAArrayType()			{ return kind == TPKind.aarray		? cast(inout(typeof(return)))this : null; }
+		inout(TupleType)				isTupleType()			{ return kind == TPKind.tuple 		? cast(inout(typeof(return)))this : null; }
+		inout(SymbolType)				isSymbolType()			{
+			with (TPKind)
+			return kind.among!(
+				unsolved,
+				typedef,
+				struct_,
+			) ? cast(inout(typeof(return)))this : null;
+		}
+		inout(TypedefType)				isTypedefType()			{ return kind == TPKind.typedef		? cast(inout(typeof(return)))this : null; } 
+		inout(StructType)				isStructType()			{ return kind == TPKind.struct_		? cast(inout(typeof(return)))this : null; }
+	}
 	
 	override void accept(Visitor v) {
 		v.visit(this);
@@ -92,11 +122,6 @@ final class ErrorType : Type {
 	this (string error_msg="") {
 		super(kind);
 		this.error_msg = error_msg;
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		return TPSIZEInvalid;
 	}
 	
 	override void accept(Visitor v) {
@@ -107,24 +132,6 @@ final class ErrorType : Type {
 final class BuiltInType : Type {
 	this (TPKind kind) {
 		super(kind);
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		with (TPKind)
-		switch (kind) {
-			case int32:		return 4;
-			case uint32:	return 4;
-			case int64:		return 8;
-			case uint64:	return 8;
-			case real32:	return 4;
-			case real64:	return 8;
-			case unit:		return 4;
-			case bool_:		return 4;
-			case string_:	return 8;
-			case char_:		return 4;
-			default:		assert(0);
-		}
 	}
 	
 	override void accept(Visitor v) {
@@ -139,11 +146,6 @@ final class FuncType : Type {
 	this (Type ran, Type dom) {
 		super(TPKind.func);
 		this.ran = ran, this.dom = dom;
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		return 16u;
 	}
 	
 	override void accept(Visitor v) {
@@ -157,11 +159,6 @@ final class LazyType : Type {
 	this (Type tp) {
 		super(TPKind.lazy_);
 		this.tp = tp;
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		return 16u;
 	}
 	
 	override void accept(Visitor v) {
@@ -175,11 +172,6 @@ final class PtrType : Type {
 	this (Type tp) {
 		super(TPKind.ptr);
 		this.tp = tp;
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		return 8u;
 	}
 	
 	override void accept(Visitor v) {
@@ -193,11 +185,6 @@ final class ArrayType : Type {
 	this (Type tp) {
 		super(TPKind.array);
 		this.tp = tp;
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		return 16u;
 	}
 	
 	override void accept(Visitor v) {
@@ -212,11 +199,6 @@ final class AArrayType : Type {
 	this (Type key, Type value) {
 		super(TPKind.aarray);
 		this.key = key, this.value = value;
-		sizeok = Sizeok.done;
-	}
-	
-	override TPSIZE size() @property {
-		return 8u;
 	}
 	
 	override void accept(Visitor v) {
@@ -232,41 +214,26 @@ final class TupleType : Type {
 		this.tps = tps;
 	}
 	
-	TPSIZE _size;			// remember the size
-	override TPSIZE size() @property {
-		if (sizeok == Sizeok.done) return _size;
-		
-		TPSIZE _size;
-		foreach (tp; tps) {
-			assert(tp);
-			if (tp.size != TPSIZEInvalid)
-				_size += tp.size;
-		}
-		sizeok = Sizeok.done;
-		return _size;
-	}
-	
 	override void accept(Visitor v) {
 		v.visit(this);
 	}
 }
 
 class SymbolType : Type {
-	Identifier[] ids;			// identifiers
-	Symbol sym;					// corresponding symbol
+	Identifier[] ids;			/// identifiers `foo.bar.baz` <-> ["foo", "bar", "baz"]
+	
+	Symbol _sym;					/// corresponding symbol declaration
+	import semantic.scope_;
+	Scope semsc;				/// the scope this type belong to
 	
 	this (TPKind kind, Identifier[] ids) {
 		super(kind);
 		this.ids = ids;
 	}
 	
-	this (TPKind kind, Symbol sym) {
+	this (TPKind kind, Symbol _sym) {
 		super(kind);
-		this.sym = sym;
-	}
-	
-	override TPSIZE size() @property {
-		assert(0);
+		this._sym = _sym;
 	}
 	
 	override void accept(Visitor v) {
@@ -276,74 +243,14 @@ class SymbolType : Type {
 
 /// An identifier type defined by typedef
 final class TypedefType : SymbolType {
-	import ast.declaration: TypedefDeclaration;
-	/// return the TypedefDeclaration of this symbol
-	TypedefDeclaration td() @property {
-		return cast(TypedefDeclaration) sym;
+	import ast.declaration;
+	inout(TypedefDeclaration) sym() @nogc inout const @property {
+		return cast(inout) sym.isTypedefDeclaration;
 	}
 	
-	this (Symbol sym) {
-		super(TPKind.typedef, sym);
-	}
-	
-	/** Get the type the identifier represents.
-	 * e.g.
-	 *	 module aaa;
-	 *	 typedef foo = bar;
-	 *	 typedef bar = int32;
-	 * <aaa.foo>.resolve = <int32>
-	 */
-	public Type resolve() {
-		// Cycle detected
-		if (is_resolving) {
-			message.error(sym.loc, "Circular typedef resolving of ", sym.recoverString());
-			kind = TPKind.error;
-			return this;
-		}
-		if (_resolve) return _resolve;
-		
-		// start resolving
-		is_resolving = true;
-			
-		assert(td);
-		auto one_step = td.tp;
-		assert(one_step);
-		// resolve
-		if (one_step.kind == TPKind.typedef)
-			_resolve = (cast(TypedefType) one_step).resolve();
-		else
-			_resolve = one_step;
-		assert(_resolve);
-		
-		// end resolving
-		is_resolving = false;
-		
-		return _resolve;
-	}
-	private Type _resolve;
-	private bool is_resolving = false;  /// Cycle detection
-	
-	
-	private TPSIZE _size;	 // remember size
-	override TPSIZE size() @property {
-		// for now
-		assert(td);
-		
-		if (sizeok == Sizeok.done) return _size;
-		// circular reference detected
-		if (sizeok == Sizeok.inprocess) {
-			message.error(sym.loc, "Circular reference was detected: ", sym.recoverString());
-			this.kind = TPKind.error;
-			this.sizeok = Sizeok.done;
-			return _size = TPSIZEInvalid;
-		}
-		
-		// start calculating
-		sizeok = Sizeok.inprocess;
-		_size = td.tp.size();
-		// done
-		sizeok = Sizeok.done;
-		return _size;
+	this (Identifier[] ids, Symbol _sym) {
+		super(TPKind.typedef, ids);
+		this._sym = _sym;
 	}
 	
 	override void accept(Visitor v) {
@@ -353,15 +260,13 @@ final class TypedefType : SymbolType {
 
 final class StructType : SymbolType {
 	import ast.struct_;
-	StructDeclaration sd;
-	
-	this (Symbol sym) {
-		super(TPKind.struct_, sym);
+	inout(StructDeclaration) sym() @nogc inout const @property {
+		return cast(inout) _sym.isStructDeclaration;
 	}
 	
-	override TPSIZE size() @property {
-		assert(sd);
-		return sd.structSize;
+	this (Identifier[] ids, Symbol _sym) {
+		super(TPKind.typedef, ids);
+		this._sym = _sym;
 	}
 	
 	override void accept(Visitor v) {

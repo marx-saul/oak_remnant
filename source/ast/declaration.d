@@ -11,7 +11,7 @@ import visitor.visitor;
 
 final class FuncArgument : Symbol {
 	Type tp;				/// the argument of the type
-	FuncDeclaration fd;
+	FuncDeclaration fd;		/// to which function this argument belongs
 	
 	this (Identifier id, Type tp) {
 		super (SYMKind.arg, id);
@@ -29,22 +29,12 @@ final class FuncDeclaration : ScopeSymbol {
 	BlockStatement body;			/// function body
 	
 	SymbolTable args_table;			/// table of arguments, converted from `this.args`
+	bool need_context;				/// does this function need a context pointer
 	
 	this (Identifier id, Type rettp, FuncArgument[] args, BlockStatement body) {
 		super (SYMKind.func, id, []);
 		this.rettp = rettp, this.args = args, this.body = body;
-		/+
-		// set argument table
 		this.args_table = new SymbolTable;
-		foreach (arg; args) {
-			if (!args_table[arg.id.name]) {
-				message.error(arg.id.loc,
-				"Argument names collide : two or more \x1b[46m", arg.id.name, "\x1b[0m in ",
-				"already appeared in ", table[id.name].toString());
-			}
-			args_table.[arg.id.name] = arg;
-		}
-		+/
 		//assert(rettp, "Auto type inference of the return type of functions are not supported yet : " ~ this.recoverString());
 	}
 	
@@ -117,12 +107,12 @@ final class TypedefDeclaration : Symbol {
 
 // import (foo = ) bar.baz;
 class ImportDeclaration : Symbol {
-	string[] names;		/// module name
+	string[] names;		/// symbols of the module or package ["bar", "baz"]
 	bool is_replaced;	/// is there `foo = ``
 	inout(BindedImportDeclaration) isBinded() inout const @property @nogc {
 		return null;
 	}
-	Module module_;		/// the module
+	Package module_;			/// the module
 	ImportDeclaration next;		/// Linked list
 	
 	/**

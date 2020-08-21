@@ -10,6 +10,8 @@ unittest {
 		auto parser = new Parser!string(`
 		module main;
 		
+		import foo, foo.bar.baz, qux = quux.corge, grault.garply, grault.garply.waldo, fred.plugh : xyzzy, thud;
+		
 		let x: int32;
 		let msg: string = "hello world";
 		
@@ -74,7 +76,7 @@ unittest {
 			writeln();
 		}
 		{
-			auto sym = mod.semsc.access(["MyStr", "Inner", "InnerInner"]);
+			auto sym = mod.semsc.search("foo");
 			if (sym is null) {
 				writeln("NOT FOUND");
 			}
@@ -83,6 +85,77 @@ unittest {
 			}
 			writeln();
 		}
+		{
+			auto sym = mod.semsc.search("xyzzy");
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}
+		{
+			auto sym = mod.semsc.search("qux");
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}
+		{
+			auto sym = mod.semsc.search("quux");
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}
+		{
+			auto sym = mod.semsc.search("fred");
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}
+		{
+			auto sym = mod.semsc.accessImportedModule(["grault", "garply", "waldo"]);
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}
+		{
+			auto sym = mod.semsc.accessImportedModule(["fred", "plugh"]);
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}
+		/+
+		{
+			auto sym = mod.semsc.access(["MyStr", "Inner", "InnerInner"]);
+			if (sym is null) {
+				writeln("NOT FOUND");
+			}
+			else {
+				sym.to_string().writeln();
+			}
+			writeln();
+		}+/
 		
 	}
 	

@@ -61,6 +61,10 @@ class Symbol : ASTNode {
 	PASS1 pass1 = PASS1.init;							/// semantic pass that is currently run on this symbol
 	Scope semsc;									/// the scope this symbol belongs to or this symbol generates(when it is a scope-symbol)
 	
+	this (Identifier id) {
+		this.kind = SYMKind.unsolved, this.id = id;
+	}
+	
 	this (SYMKind kind, Identifier id) {
 		this.kind = kind, this.id = id;
 	}
@@ -146,7 +150,7 @@ class Symbol : ASTNode {
 		inout(TemplateDeclaration)		isTemplateDeclaration()		{ return kind == SYMKind.struct_	? cast(inout(typeof(return)))this : null; }
 		inout(TemplateInstance)			isTemplateInstance()		{ return kind == SYMKind.struct_	? cast(inout(typeof(return)))this : null; }
 		inout(Module)					isModule()					{ return kind == SYMKind.module_	? cast(inout(typeof(return)))this : null; }
-		inout(Package)					isPackage()					{ return kind == SYMKind.package_	? cast(inout(typeof(return)))this : null; }
+		inout(Package)					isPackage()					{ return kind == SYMKind.package_ || kind == SYMKind.module_	? cast(inout(typeof(return)))this : null; }
 		
 		inout(ScopeSymbol)				isScopeSymbol()				{
 			import std.algorithm: among;
@@ -177,45 +181,15 @@ class Symbol : ASTNode {
 class ScopeSymbol : Symbol {
 	Symbol[] members;		/// symbols declared in this scope symbol
 	SymbolTable table;		/// the table of `members`
+	ImportTree import_tree;	/// for searching imported modules
 	
 	this (SYMKind kind, Identifier id, Symbol[] members) {
 		super(kind, id);
 		this.members = members;
 		this.table = new SymbolTable;
-		
-		// currently
-		//setSymbols(members);
+		this.import_tree = new ImportTree;
 	}
 	
-	/+// currently
-	private void setSymbols(Symbol[] mems) {
-		import std: among, to;
-		foreach (mem; mems) {
-			/*
-			 * ignore declarations of the form
-			 * this ... { ... }
-			 * ~this ... { ... }
-			 * mixin(...)
-			 * mixin Foo!(...)
-			 * static if {...} else {...}
-			 * version(...) {...}
-			 * debug(...) {...}
-			 */
-			with (SYMKind)
-			if (!mem || mem.kind.among!(ctor, dector, mixin_, template_mixin, staticif, version_, debug_,)) continue;
-			
-			// add a symbol
-			auto flag = table.add(mem);
-			// same identifier appeared multiple time
-			if (!flag) {
-				auto sym = table[mem.id.name];
-				assert(sym);
-				message.error(mem.loc, "identifier \x1b[46m", mem.id.name, "\x1b[0m has already been declared in line:",
-					sym.id.loc.line_num.to!string, ", index:", sym.id.loc.index_num.to!string, ".");
-			}
-		}
-	}
-	+/
 	/**
 	 * Search for the symbol as a member of this symbol.
 	 * Returns:
@@ -230,11 +204,12 @@ class ScopeSymbol : Symbol {
 	}
 }
 
-
-/// Symbol table
-class SymbolTable {
+/// Symbol table that every symbol is a class instance of SYM
+class SpecifiedSymbolTable(SYM)
+	if (is(SYM:Symbol))
+{
 	/// store all identifiers and their declarations
-	private Symbol[string] dictionary;
+	private SYM[string] dictionary;
 	
 	/+
 	/// add a symbol.
@@ -253,7 +228,7 @@ class SymbolTable {
 	 * Get the symbol.
 	 * Returns: null if the name has not been declared.
 	 */
-	inout(Symbol) opIndex(string name) inout const {
+	inout(SYM) opIndex(string name) inout const {
 		auto p = name in dictionary;
 		return cast(inout) (p ? *p : null);
 	}
@@ -262,8 +237,59 @@ class SymbolTable {
 	 * Regisiter the symbol with the string indicated.
 	 * Multiple registration are considered to be bugs.
 	 */
-	ref Symbol opIndexAssign(Symbol sym, string name) {
+	ref SYM opIndexAssign(SYM sym, string name) {
 		assert(sym && !this.opIndex(name));
 		return dictionary[name] = sym;
+	}
+	
+	auto everyMember() @property {
+		return dictionary.keys;
+	}
+}
+
+alias SymbolTable = SpecifiedSymbolTable!Symbol;
+
+/**
+ * The class for searching imported modules.
+ * For exmple, if foo.bar, foo.bar.baz, qux and quux.corge are imported, the tree is
+ * [ foo:[bar:[baz]], qux, quux:[corge] ]
+ */
+class ImportTree {
+	ImportTree[string] children;
+	ImportDeclaration decl;
+	
+	/// go deeper until you can't, and return the longest decl.
+	inout(ImportDeclaration) access(string[] names) inout const {
+		auto tree = cast(ImportTree) this;
+		auto result = cast(ImportDeclaration) decl;
+		while (names.length > 0) {
+			auto name = names[0];
+			names = names[1..$];
+			
+			auto ptr = name in tree.children;
+			// can go deeper
+			if (ptr) {
+				tree = *ptr;	// deeper
+				// get the longest
+				if (!result || tree.decl && result.names.length < tree.decl.names.length)
+					result = cast(ImportDeclaration) tree.decl;
+			}
+			else break;
+		}
+		return cast(inout) result;
+	}
+	
+	/// Push an import declaration
+	/// Returns: false if same module pushed
+	bool push(ImportDeclaration imd) {
+		if (!imd) return true;
+		auto tree = this;
+		foreach (name; imd.names) {
+			auto ptr = name in tree.children;
+			if (!ptr) ptr = &(tree.children[name] = new ImportTree);
+			tree = *ptr;
+		}
+		if (!tree.decl) { tree.decl = imd; return true; }
+		else { return false; }
 	}
 }

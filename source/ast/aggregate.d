@@ -29,6 +29,9 @@ class Fields {
 	}
 }
 
+alias TPSIZE = uint;
+enum InvalidTPSIZE = ~(0u);
+
 /**
  * declaration of aggreagete types.
  * struct, union, class, interface
