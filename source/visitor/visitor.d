@@ -11,17 +11,62 @@ abstract class Visitor {
     void visit(AggregateDeclaration);
 
 	/* declaration.d */
-	void visit(FuncArgument);
-	void visit(FuncDeclaration);
 	void visit(LetDeclaration);
 	void visit(TypedefDeclaration);
 	void visit(ImportDeclaration);
+	void visit(AliasImportDeclaration);
 	void visit(BindedImportDeclaration);
 
     /* expression.d */
     void visit(Expression);
     void visit(BinaryExpression);
+	void visit(AssExpression);
+	void visit(BinaryAssExpression);
+	void visit(AddAssExpression);
+	void visit(SubAssExpression);
+	void visit(CatAssExpression);
+	void visit(MulAssExpression);
+	void visit(DivAssExpression);
+	void visit(ModAssExpression);
+	void visit(PowAssExpression);
+	void visit(BitAndAssExpression);
+	void visit(BitXorAssExpression);
+	void visit(BitOrAssExpression);
+    void visit(PipelineExpression);
+    void visit(AppExpression);
+    void visit(OrExpression);
+    void visit(XorExpression);
+    void visit(AndExpression);
+    void visit(BitOrExpression);
+    void visit(BitXorExpression);
+    void visit(BitAndExpression);
+    void visit(EqExpression);
+    void visit(NeqExpression);
+    void visit(LsExpression);
+    void visit(LeqExpression);
+    void visit(GtExpression);
+    void visit(GeqExpression);
+    void visit(NisExpression);
+    void visit(InExpression);
+    void visit(NinExpression);
+    void visit(AddExpression);
+    void visit(SubExpression);
+    void visit(CatExpression);
+    void visit(MulExpression);
+    void visit(DivExpression);
+    void visit(ModExpression);
+    void visit(LShiftExpression);
+    void visit(RShiftExpression);
+    void visit(LogicalShiftExpression);
+    void visit(PowExpression);
+    void visit(ApplyExpression);
+    void visit(CompositionExpression);
+    void visit(DotExpression);
     void visit(UnaryExpression);
+    void visit(MinusExpression);
+    void visit(NotExpression);
+    void visit(RefofExpression);
+    void visit(DerefExpression);
     void visit(IndexingExpression);
     void visit(SlicingExpression);
     void visit(AscribeExpression);
@@ -46,6 +91,10 @@ abstract class Visitor {
     void visit(TemplateInstanceExpression);
     void visit(TypeidExpression);
 	void visit(MixinExpression);
+	
+	/* func.d */
+	void visit(FuncArgument);
+	void visit(FuncDeclaration);
 
 	/* mixin_.d */
 	void visit(Mixin);
@@ -94,8 +143,9 @@ abstract class Visitor {
     void visit(AArrayType);
     void visit(TupleType);
 	void visit(SymbolType);
-    void visit(StructType);
-    void visit(TypedefType);
+	void visit(IdentifierType);
+    void visit(InstanceType);
+	void visit(StructType);
     //void visit(MixinType);
 	
 	/* typeid_.d */

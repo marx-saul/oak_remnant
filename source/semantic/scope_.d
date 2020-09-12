@@ -1,149 +1,242 @@
+/**
+ * semantic/scope_.d
+ * The scope structure of symbols.
+ * Symbol lookup and access are implemented here.
+ */
 module semantic.scope_;
 
 import message;
 import ast.ast;
-
-enum SCKind {
-	//module_,	/// module
-	struct_,	/// struct declaration
-	//union_,
-	//class_,
-	//interface_,
-	//staticif,
-}
-
+import semantic.semantic;
+import message;
+/+
 enum SCP : ulong {
 	inlambda = 1UL,
 }
 
 enum AccessOpt : ulong {
 	ignoreVisibility = 1UL,
-	
 }
++/
 
+/// The scope class
 final class Scope {
 	Scope enclosing;					/// Lexically enclosing scope
 	ScopeSymbol scsym;					/// corresponding scope-symbol
 	
 	this (Scope enclosing, ScopeSymbol scsym) {
-		this.enclosing = enclosing;
-		this(scsym);
+		this.enclosing = enclosing, this.scsym = scsym;
 	}
-	this (ScopeSymbol scsym) {
+	/*this (ScopeSymbol scsym) {
 		this.scsym = scsym;
-	}
+	}*/
 	
 	/// Get the root module
 	inout(Module) rootModule() inout const @property {
 		if (_rootModule)
 			return cast(inout) _rootModule;
 		// go up the scope until reaching the module scope
-		auto sc = cast(Scope) this;
-		while (sc && sc.scsym) {
-			sc = sc.enclosing;
-			if (auto mod = scsym.isModule())
-				return cast(inout) (cast(Module)_rootModule = cast(Module) mod);
+		for (auto sc = cast(Scope) this; sc && sc.scsym; sc = sc.enclosing) {
+			if (auto mdl = sc.scsym.isModule)
+				return cast(inout) (cast(Module)_rootModule = cast(Module) mdl);
 		}
-		return null;
+		assert(0);
 	}
-	private Module _rootModule;
+	private Module _rootModule;			/// the result of rootModule()
 	
-	/// Get the root module
-	inout(FuncDeclaration) func() inout const @property {
-		if (_func)
+	/// Get the function declaration we are in
+	inout(FuncDeclaration) funcDeclaration() inout const @property {
+		if (func_set)
 			return cast(inout) _func;
 		// go up the scope until reaching the func scope
 		auto sc = cast(Scope) this;
 		while (sc && sc.scsym) {
-			assert(sc !is sc.enclosing);
 			sc = sc.enclosing;
-			
-			if (auto fd = scsym.isFuncDeclaration())
-				return cast(inout) (cast(FuncDeclaration) _func = cast(FuncDeclaration) fd);
+			if (auto fd = scsym.isFuncDeclaration()) {
+				cast(bool) func_set = true;
+				cast(FuncDeclaration) _func = cast(FuncDeclaration) fd;
+				return cast(inout) _func;
+			}
 		}
 		return null;
 	}
-	private FuncDeclaration _func;
-	
+	private FuncDeclaration _func;		/// the result of funcDeclaration()
+	private bool func_set = false;			/// whether func is set
 	
 	/**
-	 * Search for an identifier, starting from this scope, going up the scopes and symbol declaration
+	 * Search for an identifier, starting from this scope, going up the scopes and symbol declaration.
+	 * This does not look outside the module. That is done in 'lookup'
 	 * Returns: null if not found, symbol if found
 	 */
 	inout(Symbol) search(string name) inout const {
-		semlog("Scope.search(string) search for ", name, " in ", scsym.recoverString());
-		auto sc = cast(Scope)this;
+		//semlog("Scope.search(string) search for ", name, " in ", scsym.recoverString());
 		
-		while (sc) {
+		// go up scopes
+		for (auto sc = cast(Scope)this; sc; sc = sc.enclosing) {
 			assert(sc !is sc.enclosing);
-			assert(scsym);
-			
-			if (auto sym = scsym.hasMember(name))
-				return sym;
-			
-			sc = sc.enclosing;
+			assert(sc.scsym);
+			if (auto sym = sc.scsym.table[name])
+				return cast(inout) sym;
 		}
 		return null;
 	}
-	/+
+	
 	/**
-	 * Access the symbol `foo.bar.baz` from the current scope.
-	 * Do not go out of the root module to resolve symbol (that is done in lookup(string[])).
+	 * Privides a complete symbol lookup 
 	 * Params:
-	 *     names = the symbol of the form foo.bar.baz
+	 *     name = the string of the symbol
+	 *     root = the root pacakge
 	 */
-	 inout(Symbol) access(string[] names) inout const {
-		semlog("Scope.access(string[]) access ", names, " in ", scsym.recoverString());
-		 assert(names.length > 0);
-		 
-		 // to access foo.bar.baz, first search foo
-		 auto sym = cast(Symbol) this.search(names[0]);
-		 
-		 foreach (name; names[1..$]) {
-			 // not found
-			 if (!sym) return null;
-			 // do not look inside function body
-			 if (sym.isFuncDeclaration()) return null;
-			 // one step inside
-			 if (auto scopesym = sym.isScopeSymbol()) {
-				 sym = scopesym.hasMember(name);
-			 }
-		 }
-		 return cast(inout) sym;
-	 }
-	 +/
-	 /**
-	  * From foo.bar.baz. ..., search for import xxx.yyy.zzz. ... such that matches the longest.
-	  * This must be used after that from search(string) names[0] is known to be a name of a package or a module
-	  */
-	 inout(ImportDeclaration) accessImportedModule(string[] names) inout const {
-		semlog("Scope.accessImportedModule(string[]) search for ", names, " in ", scsym.recoverString());
+	Symbol[] lookup(string name, Package root) {
+		// declared within this module
+		if (auto sym = search(name)) {
+			return [sym];
+		}
 		
-		ImportDeclaration result;
+		auto mdls = getImportedModules(root);
 		
-		auto sc = cast(Scope)this;
-		while (sc) {
+		bool[Symbol] symbolset;
+		foreach (mdl; mdls) {
+			foreach (sym; access(mdl, name, root)) symbolset[sym] = true;
+		}
+		
+		return symbolset.keys;
+	}
+	// go up the scopes and get all imported modules
+	private Module[] getImportedModules(Package root) {
+		if (_importedModules) return _importedModules;
+		
+		// go up scopes
+		for (auto sc = cast(Scope)this; sc; sc = sc.enclosing) {
 			assert(sc !is sc.enclosing);
 			assert(sc.scsym);
-			
-			// access
-			auto decl = sc.scsym.import_tree.access(names);
-			if (decl) {
-				// to the longest
-				if (!result || result.names.length < decl.names.length)
-					result = cast(ImportDeclaration) decl;
-			}
-			
-			sc = sc.enclosing;
+			sc.scsym.foreachSymbol((Symbol s) {
+				if (auto imd = s.isImportDeclaration) {
+					if (imd.isAliasImportDeclaration || imd.isBindedImportDeclaration)
+						return;
+					else if (auto mdl = imd.getModule(root)) _importedModules ~= mdl;
+				}
+			});
 		}
-		assert(!result || !result.is_replaced);
-		return cast(inout) result;
-	 }
-	 
-	 inout(Symbol) lookup(string name) inout const {
-		 if (auto ac = search(name)) {
-			 return ac;
-		 }
-		 return null;
-	 }
+		return _importedModules;
+	}
+	private Module[] _importedModules = null;
+	
+	/**
+	 * Access the member of a scope symbol from this scope.
+	 * Params:
+	 *     scsym = the scope-symbol in which we will find the member
+	 *     name = the name of the member
+	 *     root = the root package
+	 */
+	Symbol[] access(ScopeSymbol scsym, string name, Package root) {
+		if (auto sym = scsym.getMember(name)) {
+			auto prlv = sym.prlv;
+			with (PRLV)
+			final switch (prlv) {
+			case private_:
+				// belong to the same module
+				if (this.rootModule is scsym.semsc.rootModule) return [sym];
+				else return [];
+			
+			case package_:
+				// this scope belongs to the same pkg with 'withinPkg'
+				auto withinPkg = scsym.semsc.rootModule.parent;
+				for (auto pkg = this.rootModule.parent; pkg; pkg = pkg.parent) {
+					assert(pkg !is pkg.parent);
+					if (withinPkg is pkg) return [sym];
+				}
+				return [];
+			
+			case undefined:
+			case public_:
+			case export_:
+				return [sym];
+			
+			case protected_:
+				assert(0, "Access to protected symbols are not implemented.");
+				
+			case package_specified:
+				assert(0, "Protection level \x1b[46mpackage(...)\x1b[0m with packages specified has not been implemented.");
+			}
+		}
+		
+		// search for symbol from public import
+		if (auto mdl = scsym.isModule) {
+			if (mdl.insearch) return [];
+			else mdl.insearch = true;
+		}
+		
+		bool[Symbol] symbolset;
+		Module[] publicImportedModules;
+		scsym.foreachSymbol((Symbol s) {
+			if (auto imd = s.isImportDeclaration) {
+				if (imd.isAliasImportDeclaration || imd.isBindedImportDeclaration)
+					return;
+				else if (imd.prlv != PRLV.private_) {
+					if (auto mdl = imd.getModule(root)) publicImportedModules ~= mdl;
+				}
+			}
+		});
+		foreach (mdl; publicImportedModules) {
+			if (mdl.syntax_error) continue;
+			foreach (sym; scsym.semsc.access(mdl, name, root))
+				symbolset[sym] = true;
+		}
+		
+		// search for symbol from public import
+		if (auto mdl = scsym.isModule) {
+			mdl.insearch = false;
+		}
+		
+		return symbolset.keys;
+	}
+	
+	/**
+	 * From the sequence of identifiers foo.bar.baz. ... , find the longest imported module that matches foo.bar.baz. ...
+	 * 
+	 */
+	inout(ImportDeclaration) accessImportedModule(Symbol[] syms) inout const {
+		string[] idents;
+		foreach (sym; syms) {
+			if (sym && sym.kind == SYMKind.unsolved) {
+				idents ~= sym.id.name;
+			}
+		}
+		return accessImportedModule(idents);
+	}
+	
+	inout(ImportDeclaration) accessImportedModule(string[] idents) inout const
+	in {
+		assert(idents.length > 0);
+	}
+	do {
+		ImportTree[] trees;
+		for (auto sc = cast(Scope)this; sc; sc = sc.enclosing) {
+			assert(sc !is sc.enclosing);
+			auto tree = sc.scsym.import_tree;
+			if (auto subtree = idents[0] in tree.children) trees ~= *subtree;
+		}
+		
+		foreach (name; idents[1..$]) {
+			ImportTree[] newtrees;
+			foreach (tree; trees) {
+				if (auto newtree = name in tree.children) newtrees ~= *newtree;
+			}
+			if (newtrees.length == 0) break;
+			else trees = newtrees;
+		}
+		
+		if (trees.length == 0) return null;
+		else return cast(inout) trees[0].decl;
+	}
 }
+/+
+/**
+ * Look for symbol from 'modules', and find all symbols
+ * 
+ */
+private Symbol[] symbolLookup(string name, Module[] modules) inout const {
+	return null;
+}
++/

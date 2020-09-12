@@ -12,8 +12,8 @@ import std.conv: to;
 
 final class Parser(Range) : Lexer!Range {
 	/// Create parser.
-	this (Range range, bool a2u=true) {
-		super(range, a2u);
+	this (Range range, string filepath="tmp.oak", bool a2u=true) {
+		super(range, filepath, a2u);
 	}
 
 	/// Check if the current token is the designated one, and throw it away.
@@ -62,11 +62,18 @@ final class Parser(Range) : Lexer!Range {
 	//	ModuleBody:
 	//		Declaration
 	Module parseModule() {
+		import global;
 		auto loc = token.loc;
 		
-		string[] modname;
+		PRLV prlv;
+		StorageClass stc;
+		Attribution[] attrbs;
+		
+		Identifier[] modname;
 		if (token.kind == TokenKind.module_) {
 			nextToken();	// get rid of module
+			attrbs = parseAttributionList(prlv, stc);
+			
 			modname = parseModuleName();
 			if (modname.length == 0) {
 				this.error(token.loc, "An identifier was expected after \x1b[46mmodule\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
@@ -81,14 +88,15 @@ final class Parser(Range) : Lexer!Range {
 		
 		check(TokenKind.end_of_file);
 		
-		return new Module(loc, modname, mems);
+		if (modname.length > 0) return new Module(this.filepath, attrbs, prlv, stc, modname, mems);
+		else return new Module(this.filepath, attrbs, prlv, stc, [Identifier(global.getFileName(this.filepath), loc)], mems);
 	}
 	
-	string[] parseModuleName() {
-		string[] result;
+	Identifier[] parseModuleName() {
+		Identifier[] result;
 		
 		if (token.kind == TokenKind.identifier) {
-			result ~= token.str;
+			result ~= Identifier(token.str, token.loc);
 			nextToken();
 		}
 		else {
@@ -98,7 +106,7 @@ final class Parser(Range) : Lexer!Range {
 		while (token.kind == TokenKind.dot) {
 			nextToken();	// get rid of .
 			if (token.kind == TokenKind.identifier) {
-				result ~= token.str;
+				result ~= Identifier(token.str, token.loc);
 				nextToken();	// get rid of identifier
 			}
 			else {
@@ -142,7 +150,20 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of = += -= ++= /= %= ^^= &= ^= |=
 			auto e1 = parseAssignExpression();
-			e0 = new BinaryExpression(loc, kind, e0, e1);
+			switch (kind) {
+				case ass:		e0 = new       AssExpression(loc, e0, e1);		break;
+				case add_ass:	e0 = new    AddAssExpression(loc, e0, e1);		break;
+				case sub_ass:	e0 = new    SubAssExpression(loc, e0, e1);		break;
+				case cat_ass:	e0 = new    CatAssExpression(loc, e0, e1);		break;
+				case mul_ass:	e0 = new    MulAssExpression(loc, e0, e1);		break;
+				case div_ass:	e0 = new    DivAssExpression(loc, e0, e1);		break;
+				case mod_ass:	e0 = new    ModAssExpression(loc, e0, e1);		break;
+				case pow_ass:	e0 = new    PowAssExpression(loc, e0, e1);		break;
+				case and_ass:	e0 = new BitAndAssExpression(loc, e0, e1);		break;
+				case xor_ass:	e0 = new BitXorAssExpression(loc, e0, e1);		break;
+				case or_ass:	e0 = new BitOrAssExpression(loc, e0, e1);		break;
+				default: assert(0);
+			}
 		}
 		return e0;
 	}
@@ -155,7 +176,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of |>
 			auto e1 = parseAppExpression();
-			e0 = new BinaryExpression(loc, TokenKind.pipeline, e0, e1);
+			e0 = new PipelineExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -168,7 +189,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of app
 			auto e1 = parseAppExpression();
-			e0 = new BinaryExpression(loc, TokenKind.app, e0, e1);
+			e0 = new AppExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -181,7 +202,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of ||
 			auto e1 = parseXorExpression();
-			e0 = new BinaryExpression(loc, TokenKind.or, e0, e1);
+			e0 = new OrExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -194,7 +215,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of ^^
 			auto e1 = parseAndExpression();
-			e0 = new BinaryExpression(loc, TokenKind.xor, e0, e1);
+			e0 = new XorExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -207,7 +228,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of |
 			auto e1 = parseBitOrExpression();
-			e0 = new BinaryExpression(loc, TokenKind.and, e0, e1);
+			e0 = new AndExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -220,7 +241,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of |
 			auto e1 = parseBitXorExpression();
-			e0 = new BinaryExpression(loc, TokenKind.bit_or, e0, e1);
+			e0 = new BitOrExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -233,7 +254,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of ^
 			auto e1 = parseBitAndExpression();
-			e0 = new BinaryExpression(loc, TokenKind.bit_xor, e0, e1);
+			e0 = new BitXorExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -246,7 +267,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of &
 			auto e1 = parseCmpExpression();
-			e0 = new BinaryExpression(loc, TokenKind.bit_and, e0, e1);
+			e0 = new BitAndExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -270,7 +291,19 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of < <= > >= in !in is !is
 			auto e1 = parseShiftExpression();
-			e0 = new BinaryExpression(loc, kind, e0, e1);
+			switch (kind) {
+				case ls:	e0 = new LsExpression(loc, e0, e1);		break;
+				case leq:	e0 = new LeqExpression(loc, e0, e1);	break;
+				case gt:	e0 = new GtExpression(loc, e0, e1);		break;
+				case geq:	e0 = new GeqExpression(loc, e0, e1);	break;
+				case eq:	e0 = new EqExpression(loc, e0, e1);		break;
+				case neq:	e0 = new NeqExpression(loc, e0, e1);	break;
+				case in_:	e0 = new InExpression(loc, e0, e1);		break;
+				case nin:	e0 = new NinExpression(loc, e0, e1);	break;
+				case is_:	e0 = new IsExpression(loc, e0, e1);		break;
+				case nis:	e0 = new NisExpression(loc, e0, e1);	break;
+				default: assert(0);
+			}
 		}
 		return e0;
 	}
@@ -286,7 +319,12 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of << >> >>>
 			auto e1 = parseAddExpression();
-			e0 = new BinaryExpression(loc, kind, e0, e1);
+			switch (kind) {
+				case lshift:			e0 = new LShiftExpression(loc, e0, e1);				break;
+				case rshift:			e0 = new RShiftExpression(loc, e0, e1);				break;
+				case logical_shift:		e0 = new LogicalShiftExpression(loc, e0, e1);		break;
+				default: assert(0);
+			}
 		}
 		return e0;
 	}
@@ -302,7 +340,12 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of + - ++
 			auto e1 = parseMulExpression();
-			e0 = new BinaryExpression(loc, kind, e0, e1);
+			switch (kind) {
+				case add:	e0 = new AddExpression(loc, e0, e1);	break;
+				case sub:	e0 = new SubExpression(loc, e0, e1);	break;
+				case cat:	e0 = new CatExpression(loc, e0, e1);	break;
+				default: assert(0);
+			}
 		}
 		return e0;
 	}
@@ -318,7 +361,12 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of * / %
 			auto e1 = parsePowExpression();
-			e0 = new BinaryExpression(loc, kind, e0, e1);
+			switch (kind) {
+				case mul:	e0 = new MulExpression(loc, e0, e1);	break;
+				case div:	e0 = new DivExpression(loc, e0, e1);	break;
+				case mod:	e0 = new ModExpression(loc, e0, e1);	break;
+				default: assert(0);
+			}
 		}
 		return e0;
 	}
@@ -331,7 +379,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of pow
 			auto e1 = parsePowExpression();
-			e0 = new BinaryExpression(loc, TokenKind.pow, e0, e1);
+			e0 = new PowExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -342,7 +390,7 @@ final class Parser(Range) : Lexer!Range {
 		auto e0 = parseUnaryExpression();
 		while (isFirstOfExpression) {
 			auto e1 = parseUnaryExpression();
-			e0 = new BinaryExpression(Location.init, TokenKind.apply, e0, e1);
+			e0 = new ApplyExpression(Location.init, e0, e1);
 		}
 		return e0;
 	}
@@ -358,7 +406,13 @@ final class Parser(Range) : Lexer!Range {
 			auto kind = token.kind;
 			auto loc = token.loc;
 			nextToken();	// get rid of -- ~ # !
-			return new UnaryExpression(loc, kind, parseUnaryExpression());
+			switch (kind) {
+				case minus:		return new MinusExpression(loc, parseUnaryExpression());
+				case not:		return new NotExpression(loc, parseUnaryExpression());
+				case ref_of:	return new RefofExpression(loc, parseUnaryExpression());
+				case deref:		return new DerefExpression(loc, parseUnaryExpression());
+				default: assert(0);
+			}
 		}
 		else return parseIndexingExpression();
 	}
@@ -390,7 +444,7 @@ final class Parser(Range) : Lexer!Range {
 			auto loc = token.loc;
 			nextToken();	// get rid of @
 			auto e1 = parseAscribeExpression();
-			e0 = new BinaryExpression(loc, TokenKind.composition, e0, e1);
+			e0 = new CompositionExpression(loc, e0, e1);
 		}
 		return e0;
 	}
@@ -439,11 +493,11 @@ final class Parser(Range) : Lexer!Range {
 			else if (token.kind == identifier) {
 				auto e1 = new IdentifierExpression(Identifier(token.str, loc));
 				nextToken();	// get rid of identifier
-				e0 = new BinaryExpression(loc, TokenKind.dot, e0, e1);
+				e0 = new DotExpression(loc, e0, e1);
 			}
 			else if (token.kind == new_) {
 				auto e1 = parseNewExpression();
-				e0 = new BinaryExpression(loc, TokenKind.dot, e0, e1);
+				e0 = new DotExpression(loc, e0, e1);
 			}
 		}
 		return e0;
@@ -538,6 +592,7 @@ final class Parser(Range) : Lexer!Range {
 			return e0;
 			
 		case new_:
+		case literal:
 			return parseNewExpression();
 		
 		case lambda:
@@ -643,6 +698,7 @@ final class Parser(Range) : Lexer!Range {
 	}
 	//	NewExpression:
 	//		new Type
+	//		literal Type
 	NewExpression parseNewExpression() {
 		auto loc = token.loc;
 		nextToken();	// get rid of new
@@ -782,6 +838,7 @@ final class Parser(Range) : Lexer!Range {
 			return t0;
 		case lbracket:
 			return parseArrayType();
+		case TokenKind.global:
 		case identifier:
 			return parseSymbolType();
 		case lparen:
@@ -821,35 +878,36 @@ final class Parser(Range) : Lexer!Range {
 	//		_. TemplateInstance
 	//		SymbolType . identifier
 	//		SymbolType . TemplateInstance
-	SymbolType parseSymbolType() {
+	SymbolType parseSymbolType(bool allow_global=true) {
 		bool is_global;
+		SymbolType result;
+		
 		if (token.kind == TokenKind.global) {
 			is_global = true;
-			nextToken();
+			nextToken();	// get rid of _.
 		}
 		
-		Identifier[] ids;
-		if (token.kind == TokenKind.identifier) {
-			ids ~= Identifier(token.str, token.loc);
-			nextToken();	// get rid of identifier
-		}
-		else {
+		if (token.kind != TokenKind.identifier) {
 			this.error(token.loc, "An identifier was expected, not \x1b[46m", token.str, "\x1b[0m.");
 			return null;
 		}
-		while (token.kind == TokenKind.dot) {
-			nextToken();	// get rid of .
-			if (token.kind == TokenKind.identifier) {
-				ids ~= Identifier(token.str, token.loc);
-				nextToken();	// get rid of identifier
-			}
-			else {
-				this.error(token.loc, "An identifier was expected, not \x1b[46m", token.str, "\x1b[0m.");
-				return null;
-			}
+		
+		// template instance
+		if (lookahead(1).kind == TokenKind.temp_inst) {
+			assert(0, "template instance has not been implemented");
+		}
+		else {
+			result = new IdentifierType(Identifier(token.str, token.loc));
+			nextToken();	// get rid of id
 		}
 		
-		return new SymbolType(TPKind.unsolved, ids);
+		if (token.kind == TokenKind.dot) {
+			nextToken();	// get rid of .
+			auto next = parseSymbolType(false);
+			result.next = next;
+		}
+		
+		return result;
 	}
 	
 	//	TupleType:
@@ -891,7 +949,7 @@ final class Parser(Range) : Lexer!Range {
 		}
 		else
 		switch (token.kind) {
-			case mul:				return parseLabelStatement();
+			case colon:				return parseLabelStatement();
 			case if_:				return parseIfElseStatement();
 			case while_:			return parseWhileStatement();
 			case do_:				return parseDoWhileStatement();
@@ -914,7 +972,7 @@ final class Parser(Range) : Lexer!Range {
 			   isFirstOfExpression(x)
 			|| isFirstOfDeclaration(x)
 			|| x.among!(
-				mul,			if_,
+				colon,			if_,
 				while_,			for_,			foreach_,		foreach_reverse_,
 				break_,			continue_,		goto_,			return_,
 				identifier,		lbrace,
@@ -1094,10 +1152,10 @@ final class Parser(Range) : Lexer!Range {
 		return new ReturnStatement(loc, exp);
 	}
 	//	LabelStatement:
-	//		* identifier
+	//		: identifier
 	LabelStatement parseLabelStatement() {
 		auto loc = token.loc;
-		check(TokenKind.mul);
+		check(TokenKind.colon);
 		auto str = token.str;
 		if (token.kind == TokenKind.identifier) {
 			nextToken();	// get rid of identifier
@@ -1167,8 +1225,7 @@ final class Parser(Range) : Lexer!Range {
 	}
 	
 	//	LetDeclaration:
-	//		let LetDeclBodies ;
-	//		let LetDeclBodies , ;
+	//		let AttributionList_opt LetDeclBodies ,_opt ;
 	//	LetDeclBodies:
 	//		LetDeclBody
 	//		LetDeclBody , LetDeclBodies
@@ -1178,6 +1235,9 @@ final class Parser(Range) : Lexer!Range {
 	//		identifier : Type = Expression
 	LetDeclaration parseLetDeclaration() {
 		nextToken();	// get rid of let
+		PRLV prlv;
+		StorageClass stc;
+		auto attrbs = parseAttributionList(prlv, stc);
 		
 		LetDeclaration parse_one() {
 			auto id = Identifier(token.str, token.loc);
@@ -1192,7 +1252,7 @@ final class Parser(Range) : Lexer!Range {
 				nextToken();
 				exp = parseExpression();
 			}
-			return new LetDeclaration(id, tp, exp);
+			return new LetDeclaration(attrbs, prlv, stc, id, tp, exp);
 		}
 		
 		LetDeclaration result;
@@ -1218,8 +1278,8 @@ final class Parser(Range) : Lexer!Range {
 	}
 	
 	//	FuncDeclaration:
-	//		func identifier (: Type)_opt FunctionArgumentList_opt BlockStatement
-	//		func identifeir (: Type)_opt FunctionArgumentList_opt = Expression ;
+	//		func AttributionList_opt identifier (: Type)_opt FunctionArgumentList_opt BlockStatement
+	//		func AttributionList_opt identifeir (: Type)_opt FunctionArgumentList_opt = Expression ;
 	//	FunctionArgumentList:
 	//		FunctionArgument
 	//		FunctionArgument FunctionArgumentList
@@ -1229,6 +1289,10 @@ final class Parser(Range) : Lexer!Range {
 	FuncDeclaration parseFuncDeclaration() {
 		auto loc = token.loc;
 		nextToken();	// get rid of func
+		
+		PRLV prlv;
+		StorageClass stc;
+		auto attrbs = parseAttributionList(prlv, stc);
 		
 		Identifier id;
 		if (token.kind != TokenKind.identifier) {
@@ -1256,7 +1320,7 @@ final class Parser(Range) : Lexer!Range {
 				nextToken();	// get rid of :
 				type = parseType();
 			}
-			args ~= new FuncArgument(arg_id, type);
+			args ~= new FuncArgument([], PRLV.undefined, STC.undefined, arg_id, type);
 		}
 		
 		BlockStatement body;
@@ -1272,12 +1336,12 @@ final class Parser(Range) : Lexer!Range {
 			body = new BlockStatement(assloc, [new ReturnStatement(assloc, exp)]);
 		}
 		
-		auto result = new FuncDeclaration(id, ret_type, args, body);
+		auto result = new FuncDeclaration(attrbs, prlv, stc, id, ret_type, args, body);
 		return result;
 	}
 	
 	//	StructDeclaration:
-	//		struct identifier { StructBodyList }
+	//		struct AttributionList_opt identifier { StructBodyList }
 	//	StructBodyList:
 	//		StructBody
 	//		StructBody StructBodyList
@@ -1286,6 +1350,10 @@ final class Parser(Range) : Lexer!Range {
 	StructDeclaration parseStructDeclaration() {
 		auto loc = token.loc;
 		nextToken();	// get rid of struct
+		
+		PRLV prlv;
+		StorageClass stc;
+		auto attrbs = parseAttributionList(prlv, stc);
 		
 		Identifier id;
 		if (token.kind != TokenKind.identifier) {
@@ -1305,16 +1373,21 @@ final class Parser(Range) : Lexer!Range {
 		
 		check(TokenKind.rbrace);
 		
-		return new StructDeclaration(id, mems);
+		return new StructDeclaration(attrbs, prlv, stc, id, mems);
 	}
 	
 	//	Typedef:
-	//		typedef identifier =_opt Type ;
+	//		AttributionList_opt typedef identifier =_opt Type ;
 	TypedefDeclaration parseTypedefDeclaration() {
 		bool is_error = false;
 		auto loc = token.loc;
 		Identifier id;
 		nextToken();	// get rid of typedef
+		
+		PRLV prlv;
+		StorageClass stc;
+		auto attrbs = parseAttributionList(prlv, stc);
+		
 		if (token.kind != TokenKind.identifier) {
 			this.error(loc, "An identifier expected after \x1b[46mfunc\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
 			is_error = true;
@@ -1326,12 +1399,12 @@ final class Parser(Range) : Lexer!Range {
 		if (token.kind == TokenKind.ass) nextToken();	// get rid of =
 		auto type = parseType();
 		check(TokenKind.semicolon);
-		return new TypedefDeclaration(id, type);
+		return new TypedefDeclaration(attrbs, prlv, stc, id, type);
 	}
 	
 	//	Import:
-	//		import ImportBodies ,_opt ;
-	//		import (ImportBodies ,)_opt ImportBody : Identifiers ,_opt ;
+	//		import AttributionList_opt ImportBodies ,_opt ;
+	//		import AttributionList_opt (ImportBodies ,)_opt ImportBody : Identifiers ,_opt ;
 	//	ImportBodies:
 	//		identifier = ModuleName , ImportBodies
 	//		ModuleName , ImportBodies
@@ -1348,7 +1421,10 @@ final class Parser(Range) : Lexer!Range {
 	//		identifier = identifier
 	ImportDeclaration parseImportDeclaration() {
 		nextToken();	// get rid of import
-		ImportDeclaration result;
+		
+		PRLV prlv;
+		StorageClass stc;
+		auto attrbs = parseAttributionList(prlv, stc);
 		
 		ImportDeclaration parse_one() {
 			// identifier = Modulename
@@ -1361,53 +1437,63 @@ final class Parser(Range) : Lexer!Range {
 					this.error(token.loc, "An identifier was expected after \x1b[46mimport foo =\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
 					return null;
 				}
-				return new ImportDeclaration(replace, modname, true);
+				return new AliasImportDeclaration(attrbs, prlv, stc, replace, modname);
 			}
 			// ModuleName
 			// BindedImports
 			else {
 				Identifier id = Identifier(token.str, token.loc);
 				auto modname = parseModuleName();
+				Identifier[] ids1, ids2;
 				
 				// BindedImports
 				if (token.kind == TokenKind.colon) {
 					nextToken();	// get rid of :
 					
-					Identifier[] imports;
-					Identifier[] bindings;
 					while (token.kind == TokenKind.identifier) {
-						
-						// identifier = identifier
-						if (lookahead(1).kind == TokenKind.ass) {
-							auto binding = Identifier(token.str, token.loc);
-							nextToken();	// get rid of identifier
+						// 'id1' = 'id2'
+						// 'id1'
+						Identifier id1 = Identifier(token.str, token.loc);
+						Identifier id2;
+						nextToken();	// get rid of id1
+						if (token.kind == TokenKind.ass) {
 							nextToken();	// get rid of =
-							if (token.kind != TokenKind.identifier) {
-								this.error(token.loc, "An identifier was expected after \x1b[46mimport foo.bar : baz = \x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+							if (token.kind == TokenKind.identifier) {
+								id2 = Identifier(token.str, token.loc);
+								nextToken();	// get rid of identifier
 							}
 							else {
-								bindings ~= binding;
-								imports ~= Identifier(token.str, token.loc);
-								nextToken();	// get rid of identifier
+								this.error(token.loc, "An identifier was expected after \x1b[46=\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+								id2 = id1;
 							}
 						}
 						else {
-						// identifier
-							bindings ~= Identifier.init;
-							imports ~= Identifier(token.str, token.loc);
-							nextToken();	// get rid of identifier
+							id2 = id1;
 						}
-						if (token.kind == TokenKind.comma) nextToken();
+						ids1 ~= id1, ids2 ~= id2;
+						if (token.kind == TokenKind.comma)
+							nextToken();	// get rid of ,
 					}
-					if (imports.length == 0)
-						this.error(token.loc, "An identifier was expected after \x1b[46mimport foo.bar : \x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
-					return new BindedImportDeclaration(id, modname, imports, bindings);
+					
+					if (ids1.length == 0) {
+						this.error(token.loc, "An identifier was expected after \x1b[46:\x1b[0m, not \x1b[46m", token.str, "\x1b[0m");
+						return null;
+					}
+					//import std.stdio; writeln("here\n", ids1, "\n", ids2);
+					ImportDeclaration result = new BindedImportDeclaration(attrbs, prlv, stc, modname, ids1[0], ids2[0]);
+					auto bottom = result;
+					foreach (i; 1 .. ids1.length) {
+						bottom = bottom.next = new BindedImportDeclaration(attrbs, prlv, stc, modname, ids1[i], ids2[i]);
+					}
+					
+					return result;
 				}
 				else
-					return new ImportDeclaration(id, modname);
+					return new ImportDeclaration(attrbs, prlv, stc, modname);
 			}
 		}
 		
+		ImportDeclaration result;
 		result = parse_one();
 		if (!result) {
 			check(TokenKind.semicolon);
@@ -1430,5 +1516,140 @@ final class Parser(Range) : Lexer!Range {
 		
 		return result;
 	}
+	
+	/* Attribution */
+	//	AttributionList:
+	//		Attribution AttributionList
+	//		Attribution
+	//	Attribution:
+	//		ProtectionLevel
+	//		Deprecation
+	// //	Extern
+	//		AtAttribution
+	//		immut
+	//		const
+	//		inout
+	//		shared
+	//		lazy
+	//		ref
+	//		return
+	//		throwable
+	//		pure
+	//		ctfe
+	//		final
+	//		abstract
+	//		override
+	//		static
+	
+	// allow empty
+	Attribution[] parseAttributionList(out PRLV prlv, out StorageClass stc) {
+		Attribution[] result;
+		with (TokenKind)
+		loop: while (true) {
+			switch (token.kind) {
+			case private_:
+			case package_:
+			case public_:
+			case export_:
+			case protected_:
+				result ~= parseProtectionLevel(prlv);
+				break;
+			
+			//case deprecated_:
+			//case extern_:
+			//case composition:
+			
+			case immut:
+			case const_:
+			case inout_:
+			case shared_:
+			case lazy_:
+			case ref_:
+			case return_:
+			case throwable:
+			case pure_:
+			case final_:
+			case abstract_:
+			case override_:
+			case static_:
+				stc |= TokenKindToSTC[token.kind];
+				nextToken();
+				break;
+			
+			default: break loop;
+			}
+		}
+		return result;
+	}
+	
+	//	ProtectionLevel:
+	//		private
+	//		package
+	//		package ( ModuleNames ,_opt )
+	//		public
+	//		export
+	//		protected
+	
+	Attribution[] parseProtectionLevel(ref PRLV prlv) {
+		if (prlv != PRLV.undefined) {
+			this.error(token.loc, "Protection level confliction : \x1b[46m", token.str, "\x1b[0m.");
+		}
+		with (TokenKind)
+		switch (token.kind) {
+			case private_:
+				prlv = PRLV.private_;
+				nextToken();
+				break;
+			
+			case package_:
+				if (lookahead(1).kind == lparen) {
+					prlv = PRLV.package_specified;
+					nextToken();	// get rid of package
+					nextToken();	// get rid of (
+					auto pkgname = parseModuleName();
+					check(rparen);
+					return [new PackageSpecifiedAttribution(pkgname)];
+				}
+				else {
+					prlv = PRLV.package_;
+					nextToken();
+				}
+				break;
+			
+			case public_:
+				prlv = PRLV.public_;
+				nextToken();
+				break;
+				
+			case export_:
+				prlv = PRLV.export_;
+				nextToken();
+				break;
+			
+			case protected_:
+				prlv = PRLV.protected_;
+				nextToken();
+				break;
+			
+			default:
+				assert(0);
+		}
+		
+		return [];
+	}
+	//
+	//	Deprecation:
+	//		deprecated
+	//		deprecated ( Expressions ,_opt )
+	//
+	//	AtAttribution:
+	//		@ safe
+	//		@ trusted
+	//		@ system
+	//		@ disable
+	//		UserDefinedAttribution
+	//
+	//	UserDefinedAttribution:
+	//		@ ( Expressions ,_opt )
 }
 

@@ -15,9 +15,18 @@ import token;
 
 immutable EOF = cast(dchar) -1;
 immutable BR  = cast(dchar) '\n';
+
+enum isCharacterStream(T) = isInputRange!(T) && is(ReturnType!((T t) => t.front) : immutable dchar);
+
+interface CharacterStream {
+	immutable(dchar) character() const @property;
+	void nextChar();
+	immutable(dchar) lookahead(size_t k=1);
+}
+
 /// Wrapper for the lexer.
 private class CharacterPusher(Range)
-	if (isInputRange!(Range) && is(ReturnType!((Range r) => r.front) : immutable dchar))
+	if (isCharacterStream!Range)
 {
 	private Range character_source;
 	private dchar front_character;
@@ -93,6 +102,8 @@ class Lexer(Range)
 	private alias CP = CharacterPusher!Range;
 	private CP source;
 	private immutable bool allow_2_underbars;
+	
+	protected string filepath;
 
 	private Token _token;
 	protected Token token() @property inout { return _token; }
@@ -118,10 +129,16 @@ class Lexer(Range)
 		return following_tokens[k-1];
 	}
 
-	/// Create lexer. If a2u is false, it yields error when encountering __id.
-	public this (Range r, bool a2u = true) {
+	/**
+	 * Params:
+	 *     r = the source range
+	 *     path to the file
+	 *     a2u = when it is false, it yields error when encountering __id.
+	 */
+	public this (Range r, string filepath, bool a2u = true) {
 		source = new CP(r);
 		_nextToken();
+		this.filepath = _token.loc.path = filepath;
 		allow_2_underbars = a2u;
 	}
 
@@ -220,7 +237,11 @@ class Lexer(Range)
 				case "immut":			_token.kind = immut;			break;
 				case "const":			_token.kind = const_;			break;
 				case "inout":			_token.kind = inout_;			break;
+				case "shared":			_token.kind = shared_;			break;
+				case "lazy":			_token.kind = lazy_;			break;
 				case "ref":				_token.kind = ref_;				break;
+				case "out":				_token.kind = out_;				break;
+				case "scope":			_token.kind = scope_;			break;
 				case "private":			_token.kind = private_;			break;
 				case "protected":		_token.kind = protected_;		break;
 				case "package":			_token.kind = package_;			break;
@@ -231,6 +252,9 @@ class Lexer(Range)
 				case "final":			_token.kind = final_;			break;
 				case "static":			_token.kind = static_;			break;
 				case "deprecated":		_token.kind = deprecated_;		break;
+				case "extern":			_token.kind = extern_;			break;
+				case "pure":			_token.kind = pure_;			break;
+				case "throwable":		_token.kind = throwable;		break;
 				case "typeid":			_token.kind = typeid_;			break;
 				case "typeof":			_token.kind = typeof_;			break;
 				case "if":				_token.kind = if_;				break;
@@ -255,6 +279,8 @@ class Lexer(Range)
 				case "not":				_token.kind = not;				break;
 				case "in":				_token.kind = in_;				break;
 				case "is":				_token.kind = is_;				break;
+				case "new":				_token.kind = new_;				break;
+				case "literal":			_token.kind = literal;			break;
 				default:				_token.kind = identifier;		break;
 			}
 			if (!allow_2_underbars && str.length >= 2 && str[0] == '_' && str[1] == '_') {

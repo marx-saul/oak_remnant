@@ -14,7 +14,7 @@ import std.stdio;
  * 		msgs = error messages
  */
 void error(Location loc, string[] msgs...) {
-	write(loc.toString(), ": ");
+	if (loc != Location.init) write(loc.toString(), ": ");
 	write("\x1b[31mError:\x1b[0m ");
 	show_message(msgs);
 }
@@ -25,7 +25,7 @@ void error(Location loc, string[] msgs...) {
  * 		msgs = warning messages
  */
 void warning(Location loc, string[] msgs...) {
-	write(loc.toString(), ": ");
+	if (loc != Location.init) write(loc.toString(), ": ");
 	write("\x1b[33mWarning:\x1b[0m ");
 	show_message(msgs);
 }

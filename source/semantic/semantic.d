@@ -4,8 +4,17 @@ import token: Location;
 import ast.ast: ASTNode;
 import visitor.visitor;
 
-enum PASS1 {
-	init,			/// semantic pass has not been called
-	inprocess,		/// in process
-	done,			/// semantic pass is done
+// general pass
+enum PASS : ubyte {
+	init = 0,			/// semantic procedure has not been called
+	inprocess = 10,		/// semantic procedure is in process
+	done = 20,			/// semantic procedure is done
 }
+
+public import
+	semantic.expression,
+	semantic.scope_,
+	semantic.set_scope,
+	semantic.symbolsem,
+	semantic.type
+	;

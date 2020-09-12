@@ -15,17 +15,61 @@ class PermissiveVisitor : Visitor {
     override void visit(AggregateDeclaration) {}
 
 	/* declaration.d */
-	override void visit(FuncArgument) {}
-	override void visit(FuncDeclaration) {}
 	override void visit(LetDeclaration) {}
 	override void visit(TypedefDeclaration) {}
 	override void visit(ImportDeclaration) {}
+	override void visit(AliasImportDeclaration) {}
 	override void visit(BindedImportDeclaration) {}
 
-    /* expression.d */
-    override void visit(Expression) {}
+    /* expression.d */    override void visit(Expression) {}
     override void visit(BinaryExpression) {}
+	override void visit(AssExpression) {}
+	override void visit(BinaryAssExpression) {}
+	override void visit(AddAssExpression) {}
+	override void visit(SubAssExpression) {}
+	override void visit(CatAssExpression) {}
+	override void visit(MulAssExpression) {}
+	override void visit(DivAssExpression) {}
+	override void visit(ModAssExpression) {}
+	override void visit(PowAssExpression) {}
+	override void visit(BitAndAssExpression) {}
+	override void visit(BitXorAssExpression) {}
+	override void visit(BitOrAssExpression) {}
+    override void visit(PipelineExpression) {}
+    override void visit(AppExpression) {}
+    override void visit(OrExpression) {}
+    override void visit(XorExpression) {}
+    override void visit(AndExpression) {}
+    override void visit(BitOrExpression) {}
+    override void visit(BitXorExpression) {}
+    override void visit(BitAndExpression) {}
+    override void visit(EqExpression) {}
+    override void visit(NeqExpression) {}
+    override void visit(LsExpression) {}
+    override void visit(LeqExpression) {}
+    override void visit(GtExpression) {}
+    override void visit(GeqExpression) {}
+    override void visit(NisExpression) {}
+    override void visit(InExpression) {}
+    override void visit(NinExpression) {}
+    override void visit(AddExpression) {}
+    override void visit(SubExpression) {}
+    override void visit(CatExpression) {}
+    override void visit(MulExpression) {}
+    override void visit(DivExpression) {}
+    override void visit(ModExpression) {}
+    override void visit(LShiftExpression) {}
+    override void visit(RShiftExpression) {}
+    override void visit(LogicalShiftExpression) {}
+    override void visit(PowExpression) {}
+    override void visit(ApplyExpression) {}
+    override void visit(CompositionExpression) {}
+    override void visit(DotExpression) {}
     override void visit(UnaryExpression) {}
+    override void visit(MinusExpression) {}
+    override void visit(NotExpression) {}
+    override void visit(RefofExpression) {}
+    override void visit(DerefExpression) {}
     override void visit(IndexingExpression) {}
     override void visit(SlicingExpression) {}
     override void visit(AscribeExpression) {}
@@ -50,7 +94,11 @@ class PermissiveVisitor : Visitor {
     override void visit(TemplateInstanceExpression) {}
     override void visit(TypeidExpression) {}
 	override void visit(MixinExpression) {}
-
+	
+	/* func.d */
+	override void visit(FuncArgument) {}
+	override void visit(FuncDeclaration) {}
+	
 	/* mixin_.d */
 	override void visit(Mixin) {}
 
@@ -98,9 +146,9 @@ class PermissiveVisitor : Visitor {
     override void visit(AArrayType) {}
     override void visit(TupleType) {}
 	override void visit(SymbolType) {}
-    override void visit(StructType) {}
-    override void visit(TypedefType) {}
-    //override void visit(MixinType) {}
+	override void visit(IdentifierType) {}
+    override void visit(InstanceType) {}
+	override void visit(StructType) {}
 	
 	/* typeid_.d */
     override void visit(Typeid) {}

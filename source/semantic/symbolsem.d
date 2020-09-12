@@ -3,16 +3,18 @@ module semantic.symbolsem;
 import message;
 import ast.ast;
 import semantic.scope_;
+import semantic.set_scope;
 import semantic.semantic;
 import visitor.general;
 import std.algorithm: among;
 
 /**
- * Set the symbol table recursively for each scope-symbols,
- * but do not look inside function body.
+ * Set the symbol table recursively for each scope-symbols.
+ * This includes expanding static if-else and mixin declarations if needed
  */
 void symbolSem(ScopeSymbol sym) {
-	if (!sym || sym.pass1 == PASS1.done) { return; }	
+	if (!sym || sym.sempass == PASS.done) return;
+	setScope(sym);
 	scope ssv = new SymbolSemVisitor;
 	sym.accept(ssv);
 }
@@ -28,14 +30,17 @@ final class SymbolSemVisitor : GeneralVisitor {
 		return scopesym ? scopesym.table : null;
 	}
 	
-	private void register(Identifier id, Symbol sym) {
+	private void register(Identifier id, Symbol sym, bool ignoreError=false) {
 		assert(table);
 		
 		// already exist
 		if (auto col = table[id.name]) {
-			message.error(id.loc,
-				"Multiple declaration of \x1b[46m", id.name, "\x1b[0m, ",
-				"already appeared in ", col.toString());
+			if (!ignoreError)
+				message.error(
+					id.loc,
+					"Multiple declaration of \x1b[46m", id.name, "\x1b[0m, ",
+					"already appeared in ", col.toString()
+				);
 		}
 		else {
 			table[id.name] = sym;	// push this symbol
@@ -43,19 +48,19 @@ final class SymbolSemVisitor : GeneralVisitor {
 	}
 	
 	override void visit(Symbol sym) {
-		if (sym.pass1 == PASS1.done) return;
+		if (sym.sempass == PASS.done) return;
 		if (!table) return;
-		semlog("SymbolSemVisitor.visit(Symbol) ", typeid(sym), " ", sym.id.name);
+		//semlog("SymbolSemVisitor.visit(Symbol) ", typeid(sym), " ", sym.id.name);
 		
 		register(sym.id, sym);
 		
-		sym.pass1 = PASS1.done;
+		sym.sempass = PASS.done;
 	}
 	
 	override void visit(ScopeSymbol sym) {
-		if (sym.pass1 == PASS1.done) { return; }
+		if (sym.sempass == PASS.done) { return; }
 		// cycle detected
-		if (sym.pass1 == PASS1.inprocess) {
+		if (sym.sempass == PASS.inprocess) {
 			message.error(sym.id.loc, "Circular reference to \x1b[1m", sym.id.name, "\x1b[0m.");
 			return;
 		}
@@ -63,7 +68,7 @@ final class SymbolSemVisitor : GeneralVisitor {
 		
 		/* ********************************************************************* */
 		visit(cast(Symbol) sym);	// push this symbol
-		sym.pass1 = PASS1.inprocess;
+		sym.sempass = PASS.inprocess;
 		
 		const tmp_scopesym = scopesym;		// save
 		scopesym = sym;			// one step deeper
@@ -72,7 +77,7 @@ final class SymbolSemVisitor : GeneralVisitor {
 		// push members to the symbol table
 		foreach (s; sym.members) {
 			assert(s);
-			if (s.pass1 == PASS1.done) continue;
+			if (s.sempass == PASS.done) continue;
 			
 			// in the first process do not expand mixin, static if-else, template mixin, version, debug
 			with (SYMKind)
@@ -84,7 +89,7 @@ final class SymbolSemVisitor : GeneralVisitor {
 			}
 		}
 		
-		// expand mixin, stati if-else, template mixin, version, debug;
+		// expand mixin, static if-else, template mixin, version, debug;
 		if (need_redo) {
 			
 		}
@@ -92,21 +97,16 @@ final class SymbolSemVisitor : GeneralVisitor {
 		scopesym = cast(ScopeSymbol)tmp_scopesym;			// recover
 	}
 	
+	override void visit(FuncArgument) { assert(0); }
+	
 	// do not look inside function body
 	override void visit(FuncDeclaration sym) {
-		// set function arguments
-		//foreach (arg; sym.args) {
-		//	assert(arg);
-		//	sym.args_table[arg.id.name] = arg;
-		//}
 		visit(cast(Symbol) sym);
 	}
 	
-	override void visit(FuncArgument) { assert(0); }
-	
 	override void visit(LetDeclaration ld) {
-		if (ld.pass1 == PASS1.done) { return; }
-		semlog("SymbolSemVisitor.visit(LetDeclaration) ", ld.id.name);
+		if (ld.sempass == PASS.done) { return; }
+		//semlog("SymbolSemVisitor.visit(LetDeclaration) ", ld.id.name);
 		
 		// register each identifiers
 		for (auto node = ld; node; node = node.next) {
@@ -114,46 +114,37 @@ final class SymbolSemVisitor : GeneralVisitor {
 			visit(cast(Symbol) node);
 		}
 		
-		ld.pass1 = PASS1.done;
+		ld.sempass = PASS.done;
 	}
 	
 	override void visit(ImportDeclaration imd) {
-		if (imd.pass1 == PASS1.done) { return; }
-		semlog("SymbolSemVisitor.visit(ImportDeclaration) ", typeid(imd), " ", imd.id.name);
+		if (imd.sempass == PASS.done) { return; }
+		//semlog("SymbolSemVisitor.visit(ImportDeclaration) ", imd.id.name);
 		
-		for (auto node = imd; node; node = node.next) {
-			assert(node !is node.next);
-			// binded
-			if (node.isBinded()) {
-				node.accept(this);
-				assert(!node.next);
-				break;
-			}
-			// not binded
-			// import foo = bar.baz;
-			if (node.is_replaced)
-				visit(cast(Symbol) node);
-			// import foo.bar.baz
-			else {
-				scopesym.import_tree.push(node);
-				if (auto sym = scopesym.table[node.id.name]) {
-					if (!sym.isImportDeclaration) visit(cast(Symbol) node);	// to yield error message
-				}
-			}
-		}
+		scopesym.import_tree.push(imd);
+		register(imd.id, imd, true);
+		imd.sempass = PASS.done;
 		
-		imd.pass1 = PASS1.done;
+		if (imd.next) imd.next.accept(this);
+	}
+	
+	override void visit(AliasImportDeclaration aimd) {
+		if (aimd.sempass == PASS.done) { return; }
+		//semlog("SymbolSemVisitor.visit(AliasImportDeclaration) ", aimd.id.name);
+		
+		register(aimd.id, aimd);
+		aimd.sempass = PASS.done;
+		
+		if (aimd.next) aimd.next.accept(this);
 	}
 	
 	override void visit(BindedImportDeclaration bimd) {
-		if (bimd.pass1 == PASS1.done) { return; }
-		semlog("SymbolSemVisitor.visit(BindedImportDeclaration) ", bimd.id.name);
+		if (bimd.sempass == PASS.done) { return; }
+		//semlog("SymbolSemVisitor.visit(BindedImportDeclaration) ", bimd.id.name);
 		
-		foreach (i; 0 .. bimd.imports.length) {
-			if (bimd.bindings[i].name.length > 0) register(bimd.bindings[i], bimd);
-			else register(bimd.imports[i], bimd);
-		}
+		register(bimd.id, bimd);
+		bimd.sempass = PASS.done;
 		
-		bimd.pass1 = PASS1.done;
+		if (bimd.next) bimd.next.accept(this);
 	}
 }

@@ -18,15 +18,6 @@ struct Identifier {
 	bool is_global;		/// true iff the identifier is accessed globally (i.e. _.foo)
 }
 
-/// access level
-enum ACCLV {
-	private_,
-	package_,
-	protected_,
-	public_,
-	export_,
-}
-
 /// Kind of symbols
 enum SYMKind {
 	unsolved,			/// unsolved symbol
@@ -58,18 +49,23 @@ class Symbol : ASTNode {
 	Identifier id;									/// identifier
 	Location loc() @property { return id.loc; }		/// location
 	
-	PASS1 pass1 = PASS1.init;							/// semantic pass that is currently run on this symbol
+	PRLV prlv;										/// protection level
+	StorageClass stc;								/// storage class
+	Attribution[] attrbs;							/// attributions
+	
+	PASS sempass = PASS.init;						/// see semantic.symbolsem
 	Scope semsc;									/// the scope this symbol belongs to or this symbol generates(when it is a scope-symbol)
 	
-	this (Identifier id) {
-		this.kind = SYMKind.unsolved, this.id = id;
-	}
+	/+this (Attribution[] attrbs, PRLV prlv, StorageClass stc, Identifier id) {
+		this (SYMKind.unsolved, attrbs, prlv, stc, id);
+	}+/
 	
-	this (SYMKind kind, Identifier id) {
-		this.kind = kind, this.id = id;
-	}
-	this (SYMKind kind, string name, Location loc=Location.init) {
-		this(kind, Identifier(name, loc));
+	this (SYMKind kind, Attribution[] attrbs, PRLV prlv, StorageClass stc, Identifier id) {
+		this.kind = kind,
+		this.attrbs = attrbs;
+		if (prlv == PRLV.undefined) prlv = PRLV.public_;
+		this.prlv = prlv, this.stc = stc,
+		this.id = id;
 	}
 	
 	/// Get the full string of this symbol.
@@ -78,13 +74,17 @@ class Symbol : ASTNode {
 		string result;
 		
 		while (sym.parent) {
-			result = "." ~ sym.id.name ~ result;
+			result = "." ~ sym.thisString() ~ result;
 			sym = sym.parent;
 		}
 		result = sym.id.name ~ result;
 		if (sym.id.is_global) result = "_." ~ result;
 		
 		return result;
+	}
+	
+	string thisString() inout const {
+		return this.id.name;
 	}
 	
 	/// enclosing scope of this symbol
@@ -139,6 +139,7 @@ class Symbol : ASTNode {
 		
 	//}
 	final inout const @nogc @property {
+		inout(LetDeclaration)			isLetDeclaration()			{ return kind == SYMKind.var 		? cast(inout(typeof(return)))this : null; }
 		inout(FuncArgument)				isFuncArgument()			{ return kind == SYMKind.arg 		? cast(inout(typeof(return)))this : null; }
 		inout(FuncDeclaration)			isFuncDeclaration()			{ return kind == SYMKind.func 		? cast(inout(typeof(return)))this : null; }
 		inout(TypedefDeclaration)		isTypedefDeclaration()		{ return kind == SYMKind.typedef 	? cast(inout(typeof(return)))this : null; }
@@ -183,20 +184,64 @@ class ScopeSymbol : Symbol {
 	SymbolTable table;		/// the table of `members`
 	ImportTree import_tree;	/// for searching imported modules
 	
-	this (SYMKind kind, Identifier id, Symbol[] members) {
-		super(kind, id);
+	this (SYMKind kind, Attribution[] attrbs, PRLV prlv, StorageClass stc, Identifier id, Symbol[] members=[]) {
+		super(kind, attrbs, prlv, stc, id);
 		this.members = members;
 		this.table = new SymbolTable;
 		this.import_tree = new ImportTree;
 	}
 	
 	/**
-	 * Search for the symbol as a member of this symbol.
-	 * Returns:
-	 *     the symbol if the identifier is a member, null if not.
+	 * Refer to the symbol table. Do not consider symbol-semantic
+	 * Do not look inside the module
 	 */
 	inout(Symbol) hasMember(string name) inout const {
 		return table[name];
+	}
+	
+	/**
+	 * Search for the symbol as a member of this symbol. If symbol-semantic pass (pass1) has not been run, do it.
+	 * Do not look into the modules imported within the symbol.
+	 * Do not consider the access level
+	 * Returns:
+	 *     the symbol if the identifier is a member, null if not.
+	 */
+	Symbol getMember(string name) {
+		if (sempass == PASS.init) {
+			import semantic.symbolsem;
+			symbolSem(this);
+		}
+		return table[name];
+	}
+	
+	/**
+	 * Apply the function for each member of this symbol.
+	 * Params:
+	 *     dg = the function to apply
+	 */
+	void foreachSymbol(void delegate(Symbol) dg) {
+		if (sempass == PASS.init) {
+			import semantic.symbolsem;
+			symbolSem(this);
+		}
+		
+		foreach (sym; this.table.dictionary.byValue) {
+			if (auto imd = sym.isImportDeclaration) {
+				for (; imd; imd = imd.next) {
+					assert(imd !is imd.next);
+					dg(imd);
+				}
+			}
+			else if (auto ld = sym.isLetDeclaration) {
+				for (; ld; ld = ld.next) {
+					assert(ld !is ld.next);
+					dg(ld);
+				}
+			}
+			else {
+				dg(sym);
+			}
+		}
 	}
 	
 	override void accept(Visitor v) {
@@ -206,7 +251,7 @@ class ScopeSymbol : Symbol {
 
 /// Symbol table that every symbol is a class instance of SYM
 class SpecifiedSymbolTable(SYM)
-	if (is(SYM:Symbol))
+	if(is(SYM : Symbol))
 {
 	/// store all identifiers and their declarations
 	private SYM[string] dictionary;
@@ -258,35 +303,14 @@ class ImportTree {
 	ImportTree[string] children;
 	ImportDeclaration decl;
 	
-	/// go deeper until you can't, and return the longest decl.
-	inout(ImportDeclaration) access(string[] names) inout const {
-		auto tree = cast(ImportTree) this;
-		auto result = cast(ImportDeclaration) decl;
-		while (names.length > 0) {
-			auto name = names[0];
-			names = names[1..$];
-			
-			auto ptr = name in tree.children;
-			// can go deeper
-			if (ptr) {
-				tree = *ptr;	// deeper
-				// get the longest
-				if (!result || tree.decl && result.names.length < tree.decl.names.length)
-					result = cast(ImportDeclaration) tree.decl;
-			}
-			else break;
-		}
-		return cast(inout) result;
-	}
-	
 	/// Push an import declaration
 	/// Returns: false if same module pushed
 	bool push(ImportDeclaration imd) {
 		if (!imd) return true;
 		auto tree = this;
-		foreach (name; imd.names) {
-			auto ptr = name in tree.children;
-			if (!ptr) ptr = &(tree.children[name] = new ImportTree);
+		foreach (id; imd.modname) {
+			auto ptr = id.name in tree.children;
+			if (!ptr) ptr = &(tree.children[id.name] = new ImportTree);
 			tree = *ptr;
 		}
 		if (!tree.decl) { tree.decl = imd; return true; }

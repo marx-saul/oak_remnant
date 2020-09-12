@@ -1,13 +1,13 @@
 module test.set_scope;
 
-import std.stdio;
-import parser, ast.ast_tostring, semantic.set_scope, semantic.symbolsem;
 
 unittest {
+	import std.stdio;
+	import parser, ast.ast_tostring, semantic.set_scope, semantic.symbolsem;
 	writeln("##### set_scope unittest #####");
 	
 	{
-		auto parser = new Parser!string(`
+		auto _parser = new Parser!string(`
 		module main;
 		
 		import foo, foo.bar.baz, qux = quux.corge, grault.garply, grault.garply.waldo, fred.plugh : xyzzy, thud;
@@ -51,87 +51,52 @@ unittest {
 		}
 		
 		func main {
-			writeln app add (vector3 3.2 4.8 --1.2) ((vector3 0.8 1.5 2.3));
+			writeln app add (3.2, 4.8, --1.2) as Vector3 (0.8, 1.5, 2.3) as Vector3;
 		}
 		`);
 		
-		auto mod = parser.parse();
+		auto mod = _parser.parse();
 		
 		// set scope
 		setScope(mod);
 		assert(mod.semsc);
 		writeln();
-		
 		symbolSem(mod);
 		
-		// searching test
+		void search(string name) {
+			auto sym = mod.semsc.search(name);
+			if (sym is null) {
+				writeln(name, " : NOT FOUND");
+			}
+			else {
+				writeln(name, " : ", sym.id.loc);
+			}
+		}
+		
+		search("MyStr");
+		search("foo");
+		search("xyzzy");
+		search("qux");
+		search("quux");
+		search("fred");
+		
 		{
-			auto sym = mod.semsc.search("MyStr");
+			auto sym = mod.semsc.accessImportedModule(["grault", "garply", "waldo", "aaaa"]);
 			if (sym is null) {
 				writeln("NOT FOUND");
 			}
 			else {
-				sym.to_string().writeln();
+				writeln("FOUND ", sym.modname.length);
 			}
 			writeln();
 		}
 		{
-			auto sym = mod.semsc.search("foo");
+			auto sym = mod.semsc.accessImportedModule(["grault", "garply", "aaaa"]);
 			if (sym is null) {
 				writeln("NOT FOUND");
 			}
 			else {
-				sym.to_string().writeln();
-			}
-			writeln();
-		}
-		{
-			auto sym = mod.semsc.search("xyzzy");
-			if (sym is null) {
-				writeln("NOT FOUND");
-			}
-			else {
-				sym.to_string().writeln();
-			}
-			writeln();
-		}
-		{
-			auto sym = mod.semsc.search("qux");
-			if (sym is null) {
-				writeln("NOT FOUND");
-			}
-			else {
-				sym.to_string().writeln();
-			}
-			writeln();
-		}
-		{
-			auto sym = mod.semsc.search("quux");
-			if (sym is null) {
-				writeln("NOT FOUND");
-			}
-			else {
-				sym.to_string().writeln();
-			}
-			writeln();
-		}
-		{
-			auto sym = mod.semsc.search("fred");
-			if (sym is null) {
-				writeln("NOT FOUND");
-			}
-			else {
-				sym.to_string().writeln();
-			}
-			writeln();
-		}
-		{
-			auto sym = mod.semsc.accessImportedModule(["grault", "garply", "waldo"]);
-			if (sym is null) {
-				writeln("NOT FOUND");
-			}
-			else {
-				sym.to_string().writeln();
+				writeln("FOUND ", sym.modname.length);
 			}
 			writeln();
 		}
@@ -141,22 +106,21 @@ unittest {
 				writeln("NOT FOUND");
 			}
 			else {
-				sym.to_string().writeln();
+				writeln("FOUND ", sym.modname.length);
 			}
 			writeln();
-		}
-		/+
+		}/+
 		{
-			auto sym = mod.semsc.access(["MyStr", "Inner", "InnerInner"]);
+			size_t num;
+			auto sym = mod.semsc.access(["MyStr", "Inner", "InnerInner"], num);
 			if (sym is null) {
 				writeln("NOT FOUND");
 			}
 			else {
-				sym.to_string().writeln();
+				writeln("FOUND ", num);
 			}
 			writeln();
-		}+/
-		
-	}
-	
+		}
+		+/
+	}	
 }

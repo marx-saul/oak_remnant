@@ -21,7 +21,7 @@ abstract class Expression : ASTNode {
 	}
 }
 
-final class BinaryExpression : Expression {
+abstract class BinaryExpression : Expression {
 	TokenKind op;				/// kind of operator
 	Expression left;			/// left hand side
 	Expression right;			/// right hand side
@@ -35,12 +35,435 @@ final class BinaryExpression : Expression {
 	}
 }
 
-final class UnaryExpression : Expression {
+final class AssExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.ass, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+abstract class BinaryAssExpression : BinaryExpression {
+	this (Location loc, TokenKind op, Expression left, Expression right) {
+		super(loc, op, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class AddAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.add, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class SubAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.sub, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class CatAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.cat, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class MulAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.mul, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class DivAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.div, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class ModAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.mod, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class PowAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.pow, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class BitAndAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.bit_and, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class BitXorAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.bit_xor, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class BitOrAssExpression : BinaryAssExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.bit_or, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class PipelineExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.pipeline, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class AppExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.app, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class OrExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.or, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class XorExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.xor, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class AndExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.and, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+final class BitOrExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.bit_or, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class BitXorExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.bit_xor, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class BitAndExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.bit_and, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class EqExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.eq, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class NeqExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.neq, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class LsExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.ls, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class LeqExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.leq, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class GtExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.gt, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class GeqExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.geq, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class IsExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.is_, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class NisExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.nis, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class InExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.in_, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class NinExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.nin, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class AddExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.add, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class SubExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.sub, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class CatExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.cat, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class MulExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.mul, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class DivExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.div, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class ModExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.mod, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class LShiftExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.lshift, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class RShiftExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.rshift, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class LogicalShiftExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.logical_shift, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class PowExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.pow, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class ApplyExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.apply, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class CompositionExpression : BinaryExpression {
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.composition, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class DotExpression : BinaryExpression {
+	bool isUFCS = false;
+	this (Location loc, Expression left, Expression right) {
+		super(loc, TokenKind.dot, left, right);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+abstract class UnaryExpression : Expression {
 	TokenKind op;				/// kind of operator
 	Expression exp;				/// subsequent expression
 	this(Location loc, TokenKind op, Expression exp) {
 		super(loc);
 		this.op = op, this.exp = exp;
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class MinusExpression : UnaryExpression {
+	this (Location loc, Expression exp) {
+		super(loc, TokenKind.minus, exp);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class NotExpression : UnaryExpression {
+	this (Location loc, Expression exp) {
+		super(loc, TokenKind.not, exp);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class RefofExpression : UnaryExpression {
+	this (Location loc, Expression exp) {
+		super(loc, TokenKind.ref_of, exp);
+	}
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class DerefExpression : UnaryExpression {
+	this (Location loc, Expression exp) {
+		super(loc, TokenKind.deref, exp);
 	}
 	override void accept(Visitor v) {
 		v.visit(this);
@@ -255,7 +678,7 @@ final class NewExpression : Expression {
 }
 
 final class LambdaExpression : Expression {
-	import ast.declaration, ast.statement;
+	import ast.func, ast.statement;
 
 	Type ret_type;			/// return type
 	FuncArgument args;		/// function arguments

@@ -45,8 +45,8 @@ abstract class AggregateDeclaration : ScopeSymbol {
 	TPSIZE structSize;
 	TPSIZE unionSize;
 	
-	this (SYMKind kind, Identifier id, Symbol[] members) {
-		super(kind, id, members);
+	this (SYMKind kind, Attribution[] attrbs, PRLV prlv, StorageClass stc, Identifier id, Symbol[] members) {
+		super(kind, attrbs, prlv, stc, id, members);
 		// currently
 		this.fields = new Fields;
 	}

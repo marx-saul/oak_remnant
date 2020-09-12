@@ -34,7 +34,7 @@ final class SetScopeVisitor : GeneralVisitor {
 	}
 	
 	override void visit(Symbol sym) {
-		semlog("SetScopeVisitor.visit(Symbol) ", typeid(sym), " ", sym.id.name);
+		//semlog("SetScopeVisitor.visit(Symbol) ", typeid(sym), " ", sym.id.name);
 		sym.semsc = enclosing;
 	}
 	override void visit(FuncArgument sym) { assert(0); }
@@ -48,18 +48,14 @@ final class SetScopeVisitor : GeneralVisitor {
 	
 	// scope symbol
 	override void visit(ScopeSymbol scopesym) {
-		semlog("SetScopeVisitor.visit(ScopeSymbol) ", typeid(scopesym), " ", scopesym.id.name);
+		//semlog("SetScopeVisitor.visit(ScopeSymbol) ", typeid(scopesym), " ", scopesym.id.name);
 		// create a new scope
-		auto sc = new Scope(scopesym);
-		sc.scsym = scopesym;
-		sc.enclosing = this.enclosing;
-		
+		auto sc = new Scope(this.enclosing, scopesym);
 		// set scope
 		scopesym.semsc = sc;
 		
 		// new enclosing scope
 		auto tmp_enclosing = enclosing;		// remember
-		
 		this.enclosing = sc;				// new enclosing
 	
 		// recusively set 
@@ -71,15 +67,8 @@ final class SetScopeVisitor : GeneralVisitor {
 	}
 	
 	override void visit(FuncDeclaration fd) {
-		semlog("SetScopeVisitor.visit(FuncDeclaration) ", typeid(fd), " ", fd.id.name);
-		auto fsc = new Scope(fd);
-		fsc.enclosing = this.enclosing;
+		auto fsc = new Scope(this.enclosing, fd);
 		fd.semsc = fsc;
-		
-		// arguments
-		foreach (arg; fd.args) {
-			if (arg)
-				arg.semsc = fsc;
-		}
 	}
+	
 }

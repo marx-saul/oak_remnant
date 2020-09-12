@@ -7,7 +7,7 @@
  */
 module ast.ast_tostring;
 
-import token, lexer, ast.ast, visitor.visitor;
+import token, lexer, ast.ast, visitor.general;
 
 /**
  * Recover the source code from AST.
@@ -22,7 +22,9 @@ string to_string(ASTNode node) {
 /**
  * The visitor that turns AST into string 
  */
-final class ToStringVisitor : Visitor {
+final class ToStringVisitor : GeneralVisitor {
+	alias visit = GeneralVisitor.visit;
+	
 	string result;		/// the result is stored here
 	//private depth;		/// depth of { }
 	
@@ -51,8 +53,8 @@ final class ToStringVisitor : Visitor {
 	override void visit(Module mod) {
 		if (mod.names.length > 0) {
 			result ~= "module ";
-			foreach (name; mod.names) {
-				result ~= name ~ ".";
+			foreach (id; mod.names) {
+				result ~= id.name ~ ".";
 			}
 			result.length -= 1;
 			result ~= ";\n";
@@ -109,29 +111,29 @@ final class ToStringVisitor : Visitor {
 		result ~= "import ";
 		for (auto node = imd; node; node = node.next) {
 			assert(node !is node.next);
-			// replacement
-			if (node.is_replaced) result ~= node.id.name ~ " = ";
+			// alias 
+			if (node.isAliasImportDeclaration) result ~= node.id.name ~ " = ";
 			// module name
-			foreach (name; node.names) {
-				result ~= name ~ ".";
+			foreach (id; node.modname) {
+				result ~= id.name ~ ".";
 			}
 			result.length -= 1;
 			// bindings
-			if (auto binded = node.isBinded()) {
+			if (auto bnode = node.isBindedImportDeclaration) {
 				result ~= " : ";
-				foreach (i; 0 .. binded.imports.length) {
-					if (binded.bindings[i].name.length > 0) {
-						result ~= binded.bindings[i].name ~ "=";
-					}
-					result ~= binded.imports[i].name ~ ", ";
+				for (; bnode; bnode = bnode.next.isBindedImportDeclaration) {
+					if (bnode.id.name != bnode.binded.name) result ~= bnode.id.name ~ " = ";
+					result ~= bnode.binded.name ~ ", ";
 				}
 				result.length -= 2;
-				assert(!binded.next);
 			}
 			result ~= ", ";
 		}
 		result.length -= 2;
 		result ~= ";";
+	}
+	override void visit(AliasImportDeclaration aimd) {
+		visit(cast(AliasImportDeclaration) aimd);
 	}
 	override void visit(BindedImportDeclaration bimd) {
 		visit(cast(ImportDeclaration) bimd);
@@ -145,6 +147,14 @@ final class ToStringVisitor : Visitor {
 		if (exp.left)  exp. left.accept(this);
 		if (exp.op == TokenKind.apply) result ~= " ";
 		else result ~= " " ~ token_dictionary[exp.op] ~ " ";
+		if (exp.right) exp.right.accept(this);
+	}
+	override void visit(BinaryAssExpression exp) {
+		if (exp.parenthesized) result ~= "(";
+		scope(exit) if (exp.parenthesized) result ~= ")";
+		if (exp.left)  exp. left.accept(this);
+		if (exp.op == TokenKind.apply) result ~= " ";
+		else result ~= " " ~ token_dictionary[exp.op] ~ "= ";
 		if (exp.right) exp.right.accept(this);
 	}
 	override void visit(UnaryExpression exp) {
@@ -459,18 +469,23 @@ final class ToStringVisitor : Visitor {
 		result ~= ")";
 	}
 	override void visit(SymbolType type) {
-		if (type.ids.length == 0) return;
-		if (type.ids[0].is_global) result ~= "_.";
-		result ~= type.ids[0].name;
-		foreach (id; type.ids[1..$]) {
-			result ~= ".";
-			result ~= id.name;
+		for (auto tp = type; tp; tp = tp.next) {
+			
+			if (tp.kind == TPKind.identifier) {
+				result ~= (cast(IdentifierType) tp).id.name ~ ".";
+			}
+			else if (tp.kind == TPKind.instance) {
+				auto itp = cast(InstanceType) tp;
+				if (itp.instance) itp.instance.accept(this);
+				result ~= ".";
+			}
+			else {
+				result ~= "__error__.";
+			}
 		}
+		result.length -= 1;
 	}
 	override void visit(StructType type) {
-		this.visit(cast(SymbolType) type);
-	}
-	override void visit(TypedefType type) {
 		this.visit(cast(SymbolType) type);
 	}
 	/*override void visit(TemplateInstanceType type) {

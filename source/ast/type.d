@@ -4,37 +4,41 @@ import message;
 import token;
 import ast.astnode;
 import ast.symbol;
+import ast.template_;
 import visitor.visitor;
 import semantic.semantic;
 import std.algorithm: among;
 
 enum TPKind {
-	error,
+	error,	/// error type
 	
-	int32,
-	uint32,
-	int64,
-	uint64,
-	real32,
-	real64,
-	unit,
-	bool_,
-	string_,
-	char_,
+	int32,		/// int32 : BuiltInType
+	uint32,		/// uint32 : BuiltInType
+	int64,		/// int64 : BuiltInType
+	uint64,		/// uint64 : BuiltInType
+	real32,		/// real32 : BuiltInType
+	real64,		/// real64 : BuiltInType
+	unit,		/// unit : BuiltInType
+	bool_,		/// bool : BuiltInType
+	string_,	/// string : BuiltInType
+	char_,		/// char : BuiltInType
 	
-	func,		// Type -> Type
-	lazy_,	 	// unit -> Type which can be called without an argument, defined by func f;int32 { return 10; }
-	ptr,		// # Type
-	//ref_,		// ref Type
-	array,		// [ Type ]
-	aarray,		// [ Type : Type ]
-	tuple,		// ( Type, Type, ... )
+	func,		/// Type -> Type : FuncType
+	lazy_,	 	/// unit -> Type which can be called without an argument, defined by func f;int32 { return 10; } : LazyType
+	ptr,		/// # Type : PtrType
+	//ref_,		/// ref Type : RefType
+	array,		/// [ Type ] : ArrayType
+	aarray,		/// [ Type : Type ] : AArrayType
+	tuple,		/// ( Type, Type, ... ) : TupleType
 	
-	unsolved,	// unsolved symbol type
-	typedef,	// <A> for typedef A = B;
-	//tempinst
-	struct_,	// <S> for struct S {...}
-	//union_,
+	identifier,	/// IdentifierType
+	instance,	/// InstanceType
+	
+	unsolved,	/// SymbolType
+	
+	typedef,	/// <A> for typedef A = B; : TypedefType
+	struct_,	/// <S> for struct S {...} : StructType
+	//union_,	
 	//class_,
 }
 
@@ -69,7 +73,8 @@ abstract class Type : ASTNode {
 	TPKind kind;			/// Kind of the type.
 	bool parenthesized;		/// is this type parenthesized
 	Type resolved;			/// typedef type removed form. see also semantic/typedef.d
-	
+	bool is_resolved = false;	/// is this resolved
+	PASS ressem = PASS.init;	/// see semantic.type
 	/**
 	 */
 	this (TPKind kind) {
@@ -77,7 +82,7 @@ abstract class Type : ASTNode {
 	}
 	
 	final inout const @nogc @property {
-		inout(ErrorType)				isErrorType()			{ return kind == TPKind.error 		? cast(inout(typeof(return)))this : null; }
+		//inout(ErrorType)				isErrorType()			{ return kind == TPKind.error 		? cast(inout(typeof(return)))this : null; }
 		inout(BuiltInType)				isBuiltInType()			{
 			with (TPKind)
 			return kind.among!(
@@ -103,11 +108,12 @@ abstract class Type : ASTNode {
 			with (TPKind)
 			return kind.among!(
 				unsolved,
-				typedef,
-				struct_,
-			) ? cast(inout(typeof(return)))this : null;
+				identifier,
+				instance,
+			) != 0 ? cast(inout(typeof(return)))this : null;
 		}
-		inout(TypedefType)				isTypedefType()			{ return kind == TPKind.typedef		? cast(inout(typeof(return)))this : null; } 
+		inout(IdentifierType)			isIdentifierType()		{ return kind == TPKind.identifier	? cast(inout(typeof(return)))this : null; }
+		inout(InstanceType)				isInstanceType()		{ return kind == TPKind.instance	? cast(inout(typeof(return)))this : null; }
 		inout(StructType)				isStructType()			{ return kind == TPKind.struct_		? cast(inout(typeof(return)))this : null; }
 	}
 	
@@ -219,21 +225,15 @@ final class TupleType : Type {
 	}
 }
 
-class SymbolType : Type {
-	Identifier[] ids;			/// identifiers `foo.bar.baz` <-> ["foo", "bar", "baz"]
+abstract class SymbolType : Type {
+	SymbolType next;			/// linked list of identifier type and instance type
+	Symbol sym;						/// corresponding symbol declaration before alias, typedef resolution
 	
-	Symbol _sym;					/// corresponding symbol declaration
-	import semantic.scope_;
-	Scope semsc;				/// the scope this type belong to
-	
-	this (TPKind kind, Identifier[] ids) {
-		super(kind);
-		this.ids = ids;
+	this () {
+		super(TPKind.unsolved);
 	}
-	
-	this (TPKind kind, Symbol _sym) {
+	private this (TPKind kind) {
 		super(kind);
-		this._sym = _sym;
 	}
 	
 	override void accept(Visitor v) {
@@ -241,16 +241,12 @@ class SymbolType : Type {
 	}
 }
 
-/// An identifier type defined by typedef
-final class TypedefType : SymbolType {
-	import ast.declaration;
-	inout(TypedefDeclaration) sym() @nogc inout const @property {
-		return cast(inout) sym.isTypedefDeclaration;
-	}
+final class IdentifierType : SymbolType {
+	Identifier id;					/// identifier
 	
-	this (Identifier[] ids, Symbol _sym) {
-		super(TPKind.typedef, ids);
-		this._sym = _sym;
+	this (Identifier id) {
+		super(TPKind.identifier);
+		this.id = id;
 	}
 	
 	override void accept(Visitor v) {
@@ -258,15 +254,26 @@ final class TypedefType : SymbolType {
 	}
 }
 
-final class StructType : SymbolType {
+final class InstanceType : SymbolType {
+	TemplateInstance instance;		/// template instance
+	
+	this (TemplateInstance instance) {
+		super(TPKind.instance);
+		this.instance = instance;
+	}
+	
+	override void accept(Visitor v) {
+		v.visit(this);
+	}
+}
+
+final class StructType : Type {
 	import ast.struct_;
-	inout(StructDeclaration) sym() @nogc inout const @property {
-		return cast(inout) _sym.isStructDeclaration;
-	}
+	StructDeclaration sym;
 	
-	this (Identifier[] ids, Symbol _sym) {
-		super(TPKind.typedef, ids);
-		this._sym = _sym;
+	this (StructDeclaration sym) {
+		super(TPKind.struct_);
+		this.sym = sym;
 	}
 	
 	override void accept(Visitor v) {
